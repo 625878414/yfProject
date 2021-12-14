@@ -1,0 +1,345 @@
+<template>
+  <div class="header-tag">
+    <a-icon type="caret-left" class="header-tag-left" @click="leftMove"/>
+    <div class="header-tag-list" :style="'left:'+offsetLeft+'px;'">
+      <!-- <a-tag @click="changeTag(homeMenuId)" :color="currentIndex==0?'#1890ff':''" style="padding-right: 8px;"><i class="tag-circle" :class="currentIndex==0?'active':''" />首页</a-tag> -->
+      <div  group="tag"  v-for="(tag,index) in menuCache" :key="'tag-'+index" class="tag-draggable"  :id="'les-tag-'+index">
+      
+        <a-tag  @click="changeTag(tag.name)" :color="tag.name==currentRoute?'#1890ff':''"
+               >
+          <i class="tag-circle" :class="tag.name==currentRoute?'active':''" />{{tag.title}}<a-icon type="close" :class="homeMenuId!=tag.name?'tag-close':'none'" @click.stop="closeTag(tag.name,index)"/>
+        </a-tag>
+      </div>
+    </div>
+    <a-icon type="caret-right" class="header-tag-right" @click="rightMove" />
+    <div class="header-icon-close">
+      <a-dropdown :trigger="['click']">
+        <a class="ant-dropdown-link" @click="e => e.preventDefault()">
+          <a-icon type="close-circle" />
+        </a>
+        <a-menu slot="overlay" style="margin-top: 7px;" @click="closeTags">
+          <a-menu-item key="0">
+            <a-icon type="left-circle" />关闭左侧
+          </a-menu-item>
+          <a-menu-item key="1">
+            <a-icon type="right-circle" />关闭右侧
+          </a-menu-item>
+          <a-menu-divider />
+          <a-menu-item key="2">
+            <a-icon type="close" />关闭其他
+          </a-menu-item>
+          <a-menu-item key="3">
+            <a-icon type="close-circle" />全部关闭
+          </a-menu-item>
+        </a-menu>
+      </a-dropdown>
+      <a-icon type="redo" @click="refresh" />
+    </div>
+  </div>
+</template>
+
+<script>
+  export default {
+    name: "header-tag",
+    data() {
+      return {
+        tagLeft: 0,
+        offsetX: 20,
+        currentIndex: 0,
+        tagTotalWidth: window.innerWidth
+      }
+    },
+    components:{
+    },
+    watch:{
+      'windowW'(n){
+        console.log(n);
+          this.tagTotalWidth = n;
+      }
+    },
+    computed: {
+      windowW() {
+        return this.$store.state.app.innerWidth;
+      },
+      offsetLeft() {
+        return this.tagLeft + this.offsetX;
+      },
+      homeMenuId() {
+        return this.$store.state.user.homeMenuId;
+      },
+      routerByName() {
+        return this.$store.state.user.routerByName;
+      },
+      menuCache() {
+        let menu = this.$store.state.user.selectMenuCache;
+        this.currentIndex = 0;
+        for (let i in menu) {
+          if (menu[i]['name'] == this.currentRoute){
+            this.currentIndex = i;
+            setTimeout(()=>{
+              this.refreshTagLeft();
+            },100);
+            break;
+          }
+          // if (i == menu.length - 1) {
+          //   this.currentIndex = parseInt(i)+1;
+          //   //没有缓存,直接地址请求
+          //   let t = this.routerByName[this.currentRoute];
+          //   this.$store.commit('setSelectMenuCache', t);
+          //   setTimeout(()=>{
+          //     this.refreshTagLeft();
+          //   },100);
+          // }
+        }
+        return menu;
+      },
+      currentRoute() {
+        return this.$store.state.user.currentRoute;
+      },
+    },
+    methods: {
+      refreshTagLeft() {
+       let d = document.getElementById('les-tag-'+this.currentIndex);
+        let w = this.tagTotalWidth - this.offsetX - 46;
+        let left = -d.offsetLeft+w/2;
+        if(left<0){
+          if(this.menuCache.length>0){
+            let d = document.getElementById('les-tag-' + (this.menuCache.length-1));
+            let w = this.tagTotalWidth - this.offsetX - 88;
+            let total = -d.offsetLeft-d.offsetWidth+w;
+            if(w>d.offsetLeft+d.offsetWidth){
+              this.tagLeft = 0;
+            }else{
+              if(total>left && total){
+                this.tagLeft = total;
+              }else{
+                this.tagLeft = left;
+              }
+            }
+          }else{
+            this.tagLeft = left;
+          }
+        }else{
+          this.tagLeft = 0;
+        }
+      },
+      changeTag(name) {
+        //跳转
+        this.$store.state.user.currentRoute = name;
+        this.$router.push({
+          name: name
+        });
+      },
+      closeTag(name,index){
+        this.$store.commit('delMenuCache',index);
+        let menu = JSON.parse(JSON.stringify(this.menuCache));
+        let lastName = "";
+        if(index == 1){
+          if(menu.length>0){
+              lastName = menu[0]["name"];
+          }else{
+            this.$router.push({
+            name: "/index"
+          });
+          return false;
+          }
+        }else{
+           lastName = menu[index-1]["name"];
+        }
+        // if(menu.length>=3){
+        //   if(index==1){
+        //     lastName = menu[2]['name'];
+        //   }else{
+        //     lastName = menu[index-1]['name'];
+        //   }
+        // }else{
+        //   lastName = this.homeMenuId;
+        // }
+         this.$router.push({
+            name: lastName
+         });
+      },
+      closeTags(e) {
+        let index = this.currentIndex;
+        let menu = this.menuCache;
+        switch(e.key){
+          case "0":
+            //关闭左侧
+            menu.splice(1,this.currentIndex-1);
+            this.$store.commit('setMenuCache',menu);
+            break;
+          case "1":
+            //关闭右侧
+            menu.splice(parseInt(index)+1,menu.length);
+            this.$store.commit('setMenuCache',menu);
+            break;
+          case "2":
+            //关闭其他
+            if(index == 0){
+              menu = [menu[index]];
+            }else{
+               menu = [menu[0],menu[index]];
+            }
+            this.$store.commit('setMenuCache',menu);
+            break;
+          case "3":
+            //关闭全部
+            this.$store.commit('setMenuCache',[menu[0]]);
+            this.$router.push({
+              name: this.homeMenuId
+            });
+            break;
+        }
+      },
+      leftMove() {
+        this.tagLeft = 0;
+      },
+      rightMove() {
+        if(this.menuCache.length>1){
+          let d = document.getElementById('les-tag-' + (this.menuCache.length-1));
+          let currentDiv = document.getElementById('les-tag-' + (this.currentIndex));
+          // let w = this.windowW - this.offsetX - 46;
+          // console.log(d.offsetLeft);
+          // let left = -d.offsetLeft+w-d.offsetWidth;
+          // console.log(left);
+          // if(left<0){
+          //    this.tagLeft = left;
+          // }
+          console.log(this.tagTotalWidth);
+          let left = this.tagTotalWidth - d.offsetLeft - 88 - d.offsetWidth;
+          console.log(left);
+          if(left<0){
+            this.tagLeft = left;
+          }
+        }
+      },
+      initData() {
+
+      },
+      refresh() {
+        // let q = this.$route.query;
+        // let query = {};
+        // for (let i in q) {
+        //   query[i] = q[i];
+        // }
+        // query.t = Date.now();
+        // this.$router.push({
+        //   name: this.currentRoute,
+        //   query: query,
+        // });
+        this.$emit('on-reload');
+      }
+    },
+    mounted() {
+      this.initData();
+    }
+  }
+</script>
+
+<style scoped>
+  .header-tag {
+    height: 38px;
+    border-bottom: 1px solid #ddd;
+    position: relative;
+    padding: 0 20px;
+    overflow: hidden;
+    background:#3a4e63;
+  }
+
+  .header-tag-list {
+    position: absolute;
+    top: 0;
+    width: 10000px;
+    overflow: hidden;
+    transition:left .5s;
+    -moz-transition:left .5s; /* Firefox 4 */
+    -webkit-transition:left .5s; /* Safari and Chrome */
+    -o-transition:left .5s; /* Opera */
+  }
+
+  .header-tag-left, .header-tag-right {
+    position: absolute;
+    top: 0;
+    z-index: 1;
+    height: 37px;
+    line-height: 40px;
+    background-color: #4e6173;
+    width: 16px;
+    text-align: center;
+    cursor: pointer;
+    color: #7a8895;
+  }
+
+  .header-tag-left {
+    left: 0;
+  }
+
+  .header-tag-right {
+    right: 48px;
+  }
+  .header-icon-close{
+    position: absolute;
+    right: 0;
+    top: 0;
+    /*width: 30px;*/
+    text-align: center;
+    background: #556574;
+    height: 38px;
+    line-height: 38px;
+    border-left: 1px solid #3e4b5c;
+    cursor: pointer;
+  }
+  .header-icon-close i{
+    width: 24px;
+    text-align: center;
+    color: #fff;
+  }
+  .none {
+    display: none;
+  }
+  .tag-breadcrumb {
+    height: 60px;
+  }
+  .tag-draggable{
+    display: inline-block;
+    position: relative;
+  }
+  .tag-close{
+    float: right;
+    height: 30px;
+    line-height: 34px;
+    width: 18px;
+    text-align: center;
+    font-size: 16px !important;
+    color: #fff !important;
+  }
+  .tag-circle{
+    width: 12px;
+    height: 12px;
+    background-color: #7f8c99;
+    content: "";
+    display: inline-block;
+    border-radius: 50%;
+    float: left;
+    margin-top: 9px;
+    margin-right: 6px;
+  }
+  .tag-circle.active{
+    background-color: #70eb83;
+  }
+</style>
+<style>
+  .header-tag .ant-tag {
+    height: 30px;
+    line-height: 30px;
+    text-align: center;
+    margin-top: 4px;
+    cursor: pointer;
+    padding: 0 10px;
+    margin-right: 4px;
+    background-color: #556574;
+    color: #fff;
+    border: none;
+    font-size: 13px;
+  }
+</style>

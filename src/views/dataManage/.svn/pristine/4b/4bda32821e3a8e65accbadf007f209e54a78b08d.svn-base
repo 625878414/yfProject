@@ -1,0 +1,313 @@
+<template>
+  <div class="labelCloud">
+    <div class="search">
+      <a-input-number
+        style="margin-right:10px;width:200px"
+        v-model="labelCount"
+        :min="1"
+        :max="100"
+        step="10"
+        placeholder="请输入需要查询的标签数量"
+      ></a-input-number>
+      <a-button type="primary" @click="handleSearch">查询</a-button>
+    </div>
+    <div id="chart" :style="`width:100%;height:${bodyHeight}px`"></div>
+    <a-modal
+      v-model="modalVisible"
+      :title="modalTitle"
+      :footer="null"
+      :width="'80%'"
+      style="height:500px"
+    >
+      <div
+        :style="{
+          overflow: 'hidden',
+          position: 'relative'
+        }"
+      >
+        <a-spin :spinning="spinning">
+          <a-table
+            :data-source="tableData"
+            :columns="columns"
+            rowKey="name"
+            @expand="onExpand"
+            :expandedRowKeys="expandedRowKeys"
+            size="small"
+            :pagination="false"
+          >
+            <a-table
+              :data-source="childTableData"
+              :columns="childColumns"
+              slot="expandedRowRender"
+              rowKey="assetId"
+              size="small"
+              class="childTable"
+              :pagination="pagination"
+              @change="handleTableChange"
+            >
+              <template slot="action" slot-scope="row">
+                <a-button type="primary" @click="getDetails(row)">详情</a-button>
+              </template>
+            </a-table>
+          </a-table>
+        </a-spin>
+
+        <a-drawer
+          title="详情"
+          placement="right"
+          :visible="drawerVisible"
+          :get-container="false"
+          :wrap-style="{ position: 'absolute' }"
+          @close="onDrawerClose"
+          :width="400"
+        >
+          <a-spin :spinning="detailSpin">
+            <a-descriptions title="元数据详情" bordered :column="1" size="small">
+            <a-descriptions-item label="名称">
+              {{ details.name }}
+            </a-descriptions-item>
+            <a-descriptions-item label="ID">
+              {{ details.id }}
+            </a-descriptions-item>
+            <a-descriptions-item label="描述">
+              {{ details.description ? details.description : "无" }}
+            </a-descriptions-item>
+            <a-descriptions-item label="数据源ID">
+              {{ details.dataSourceId }}
+            </a-descriptions-item>
+            <a-descriptions-item label="数据源文件">
+              {{ details.dataSourceFile }}
+            </a-descriptions-item>
+          </a-descriptions>
+          </a-spin>
+        </a-drawer>
+      </div>
+    </a-modal>
+  </div>
+</template>
+
+<script>
+import * as echarts from "echarts";
+import "echarts-wordcloud/dist/echarts-wordcloud.min";
+export default {
+  name:"labelCloud",
+  data() {
+    return {
+      chart: null,
+      data: [],
+      modalVisible: false,
+      columns: [
+        {
+          title: "序号",
+          customRender: (text, record, index) => index + 1
+        },
+        {
+          dataIndex: "name",
+          title: "资产类型"
+        },
+        {
+          dataIndex: "count",
+          title: "使用次数",
+          customRender: text => text + "次"
+        }
+      ],
+      tableData: [],
+      childColumns: [
+        {
+          dataIndex: "assetName",
+          title: "名称"
+        },
+        {
+          dataIndex: "labelName",
+          title: "标签名"
+        },
+        {
+          dataIndex: "useTime",
+          title: "使用时间"
+        },
+        ,
+        {
+          title: "操作",
+          scopedSlots: { customRender: "action" }
+        }
+      ],
+      childTableData: [],
+      drawerVisible: false,
+      expandedRowKeys: [],
+      modalTitle: "",
+      labelCount: "",
+      pagination: {
+        current: 1,
+        pageSize: 5,
+        showTotal: total => `共${total}条`,
+        total: 0
+      },
+      spinning: false,
+      page: 0,
+      assetType: "",
+      details: {},
+      detailSpin:false
+    };
+  },
+  methods: {
+    initChart() {
+      this.$http
+        .get(`/zuul/lmanage-lcx/label/map?topN=${this.labelCount == "" ? 50 : this.labelCount * 1}`)
+        .then(res => {
+          this.chart = echarts.init(document.getElementById("chart"));
+          this.data = res.data.data;
+          console.log(res.data.data);
+          const option = {
+            title: {
+              text: "标签云",
+              x: "center",
+              textStyle: {
+                fontSize: 23
+              }
+            },
+            backgroundColor: "#FFFFFF",
+            tooltip: {
+              show: true
+            },
+            toolbox: {
+              feature: {
+                saveAsImage: {
+                  iconStyle: {
+                    normal: {
+                      color: "#FFFFFF"
+                    }
+                  }
+                }
+              }
+            },
+            series: [
+              {
+                name: "标签地图",
+                type: "wordCloud",
+                //size: ['9%', '99%'],
+                sizeRange: [20, 88],
+                //textRotation: [0, 45, 90, -45],
+                rotationRange: [-45, 90],
+                //shape: 'circle',
+                textPadding: 0,
+                autoSize: {
+                  enable: true,
+                  minSize: 6
+                },
+                textStyle: {
+                  color: () => {
+                    return (
+                      "rgb(" +
+                      [
+                        Math.round(Math.random() * 160),
+                        Math.round(Math.random() * 160),
+                        Math.round(Math.random() * 160)
+                      ].join(",") +
+                      ")"
+                    );
+                  },
+                  emphasis: {
+                    shadowBlur: 10,
+                    shadowColor: "#333"
+                  }
+                },
+                data: this.data
+              }
+            ]
+          };
+          this.chart.setOption(option);
+          //点击事件
+          this.chart.on("click", params => {
+            //点击某条标签 打开标签对应的信息
+            this.spinning = true;
+            this.modalVisible = true;
+            // console.log(params);
+            this.modalTitle = params.data.name;
+            this.$http
+              .get(`/zuul/lmanage-lcx/label/assetType/count?name=${params.data.name}`)
+              .then(res => {
+                console.log(res);
+                this.tableData = res.data.data;
+                this.expandedRowKeys.push(this.tableData[0].name);
+                this.renderChildTable(params.data.name, this.tableData[0].assetType);
+              });
+          });
+        });
+    },
+    onExpand(expanded, record) {
+      console.log(record);
+      this.assetType = record.assetType;
+      this.expandedRowKeys = [];
+      if (expanded) {
+        this.expandedRowKeys.push(record.name);
+        //发请求 获取子表格数据   此场景只支持展开一个表格
+        this.renderChildTable(this.modalTitle, record.assetType);
+      }
+    },
+    onDrawerClose() {
+      this.drawerVisible = false;
+    },
+    getDetails(row) {
+      this.drawerVisible = true;
+      this.detailSpin=true
+      console.log(row);
+      this.$http
+        .get(
+          `/zuul/lmanage-lcx/label/asset/detail?assetId=${row.assetId}&assetType=${row.assetType}`
+        )
+        .then(res => {
+          console.log(res);
+          this.details=res.data.data
+          this.detailSpin=false
+        });
+    },
+    handleSearch() {
+      this.initChart();
+    },
+    handleTableChange(pagination) {
+      this.page = pagination.current - 1;
+      this.renderChildTable(this.modalTitle, this.assetType);
+    },
+    renderChildTable(name, type) {
+      this.spinning = true;
+      this.$http({
+        url: "/zuul/lmanage-lcx/label/asset/page",
+        method: "get",
+        params: {
+          pageable: {
+            page: this.page,
+            size: 20
+          },
+          name: name,
+          assetType: type
+        }
+      }).then(res => {
+        this.childTableData = res.data.data.results;
+        this.spinning = false;
+      });
+    }
+  },
+  mounted() {
+    this.initChart();
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    }
+  }
+};
+</script>
+
+<style scoped lang="less">
+/deep/ .childTable .ant-table-small {
+  border-top: none;
+}
+.search {
+  display: flex;
+  justify-content: flex-end;
+  padding: 10px;
+}
+/deep/ .childTable.ant-table-wrapper{
+  height: 400px;
+}
+</style>

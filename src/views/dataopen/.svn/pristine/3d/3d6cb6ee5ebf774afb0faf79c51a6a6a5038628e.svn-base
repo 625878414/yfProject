@@ -1,0 +1,576 @@
+<template>
+    <div class="api-list">
+        <a-layout>
+            <a-layout-sider theme="light" style="position: fixed;z-index:10;" :collapsible="true" :defaultCollapsed="false" collapsedWidth="0" @collapse="changeCollapsed" :trigger="null">
+                <div :style="'height:'+windowH+'px;overflow:auto;'">
+                    <div style="margin: 10px 0 0 10px;font-weight: bold">
+                        <a-icon type="appstore"/>
+                        类目
+                    </div>
+                    <a-divider style="margin:10px 0;"/>
+                    <div>
+                        <a-tree
+                            checkable
+                            :tree-data="treeData"
+                            :expandedKeys="expandedKeys"
+                            @select="onSelect"
+                            @check="onCheck"
+                        >
+                            <span slot="title0010" style="color: #1890ff">sss</span>
+                        </a-tree>
+                    </div>
+                </div>
+            </a-layout-sider>
+            <a-layout :style="{ marginLeft: !collapsedStatus?'200px':'0px' }">
+                <a-layout-content :style="{ margin: '0', overflow: 'initial',height: windowH+'px;',width:!collapsedStatus?(windowW-200)+'px':windowW+'px' }">
+                    <div class="page-content-body" :style="'height:'+windowH+'px;overflow:auto;'">
+                        <div class="toolbar">
+                            <a-space>
+                                <a-button type="primary" icon="user-add" @click="add">新增</a-button>
+                                <a-button type="danger" icon="user-delete">删除</a-button>
+                            </a-space>
+                            <div class="right">
+                                <a-space>
+                                    <a-input v-model="searchConditions.name" @change="handleSearch" placeholder="请输入API名称查询" style="width: 200px;" allowClear>
+                                        <a-icon slot="suffix" type="search" />
+                                    </a-input>
+                                    <a-input v-model="searchConditions.path" @change="handleSearch" placeholder="请输入API路径查询" style="width: 200px;" allowClear>
+                                        <a-icon slot="suffix" type="search" />
+                                    </a-input>
+                                    <a-select v-model="searchConditions.method" @change="handleSearch" placeholder="请选择请求方式查询" style="width: 200px;" allowClear>
+                                        <a-select-option v-for="item in methodList" :key="item.value">
+                                            {{ item.label }}
+                                        </a-select-option>
+                                    </a-select>
+                                </a-space>
+                            </div>
+                            <div class="clear"></div>
+                        </div>
+                        <div class="page-table-frame">
+                            <a-skeleton :loading="skeletonLoading" :paragraph="{ rows: 15 }" active style="background-color: white">
+                                <a-table :loading="loading"
+                                         size="middle"
+                                         :columns="columns"
+                                         :data-source="dataTables"
+                                         :rowKey="record => record.id"
+                                         :row-selection="{ selectedRowKeys: selectedRowKeys, selectedRows: selectedRows, onChange: onSelectChange }"
+                                         @change="handleTableChange"
+                                         :pagination="pagination">
+                                    <template slot="officeNameSlots" slot-scope="text, record">
+                                        <span>{{ !!record.office ? record.office.name : '' }}</span>
+                                    </template>
+                                    <template slot-scope="text, record" slot="action">
+                                        <a-space>
+                                            <a-button type="primary" size="small" @click="edit(record.id)">修改</a-button>
+                                            <a-button type="danger" size="small" @click="del(record.id)">删除</a-button>
+                                        </a-space>
+                                    </template>
+                                    <template slot-scope="text, record" slot="tagsSlot">
+                                        <a-tag color="blue" v-for="(item, index) in record.tagIdList" :key="item">
+                                            {{ tagDict[item] }}
+                                        </a-tag>
+                                    </template>
+                                </a-table>
+                            </a-skeleton>
+                        </div>
+                    </div>
+                </a-layout-content>
+            </a-layout>
+        </a-layout>
+        <a-drawer
+            :title=titleDrawer
+            :visible="formDrawer"
+            width="500"
+            @close="onClose"
+            :destroyOnClose="true"
+            :body-style="{ paddingBottom: '80px' }">
+            <a-form-model ref="formData" :model="formData" :rules="ruleValidate" label-position="top" layout='vertical' :form="formDrawer">
+                <a-form-model-item label="名称" prop="name">
+                    <a-input v-model="formData.name" allowClear :maxLength="50" placeholder="最多输入50个字符"></a-input>
+                </a-form-model-item>
+                <a-form-model-item label="中文名称" prop="chinese">
+                    <a-input v-model="formData.name" allowClear :maxLength="50" placeholder="最多输入50个字符"></a-input>
+                </a-form-model-item>
+                <a-form-model-item label="类目" prop="officeIdList">
+                    <a-tree-select
+                        v-model="formData.categoryId"
+                        style="width: 100%"
+                        :dropdown-style="{ maxHeight: '400px', overflow: 'auto' }"
+                        :tree-data="treeData"
+                        placeholder="请选择类目"
+                        @change="change"
+                        tree-default-expand-all
+                    >
+                    </a-tree-select>
+                </a-form-model-item>
+                <a-form-model-item label="API类型" prop="type">
+                    <a-select v-model="formData.type" placeholder="请选择API类型">
+                        <a-select-option v-for="item in typeList" :key="item.value">
+                            {{ item.label }}
+                        </a-select-option>
+                    </a-select>
+                </a-form-model-item>
+                <a-form-model-item label="请求方式" prop="method">
+                    <a-select v-model="formData.method" placeholder="请选择请求方式">
+                        <a-select-option v-for="item in methodList" :key="item.value">
+                            {{ item.label }}
+                        </a-select-option>
+                    </a-select>
+                </a-form-model-item>
+                <a-form-model-item label="API路径" prop="path">
+                    <a-input v-model="formData.path" placeholder="请输入正确的路径" :maxLength="50"></a-input>
+                </a-form-model-item>
+<!--                <a-form-model-item label="协议" prop="userType">
+                    <a-select v-model="formData.protocol" placeholder="请选择协议">
+                        <a-select-option value="0">系统管理</a-select-option>
+                        <a-select-option value="1">普通用户</a-select-option>
+                    </a-select>
+                </a-form-model-item>-->
+                <a-form-model-item label="返回类型" prop="returnType">
+                    <a-select v-model="formData.returnType" placeholder="请选择返回类型">
+                        <a-select-option key="json" value="json">JSON</a-select-option>
+                    </a-select>
+                </a-form-model-item>
+                <a-form-model-item label="API标签" prop="tags">
+                    <a-select v-model="formData.tagIdList" mode="multiple" placeholder="请选择标签">
+                        <a-select-option v-for="item in tagOption" :value="item.value" :key="item.value">{{ item.label }}</a-select-option>
+                    </a-select>
+                </a-form-model-item>
+                <a-form-model-item label="API描述" prop="description">
+                    <a-textarea v-model="formData.description" placeholder="最多输入100个字符" :maxLength="100" :auto-size="{ minRows: 3, maxRows: 5 }" />
+                </a-form-model-item>
+            </a-form-model>
+            <div class="page-drawer-footer">
+                <a-button style="margin-right: 8px" @click="onClose">关闭</a-button>
+                <a-button type="primary" :loading="submitLoading" @click="handleSubmit()">保存</a-button>
+            </div>
+        </a-drawer>
+    </div>
+</template>
+
+<script>
+import {GetPageByDelete} from "@/libs/util";
+
+export default {
+    name: "api-list",
+    data() {
+        return {
+            titleDrawer: false,
+            formDrawer: false,
+            collapsedStatus: false,
+            zeroWidthTriggerStyle: {
+                backgroundColor: '#1890ff',
+                color: " #fff",
+                right: " -31px",
+                top: "70px"
+            },
+            //treeData: [],
+            treeData: [],
+            searchConditions: {
+                sort: 'id,ASC',
+                name: '',
+                path: '',
+                method: '',
+                categoryId: ''
+            },
+            loading: false,
+            skeletonLoading: false,
+            submitLoading: false,
+            dataTables: [],
+            tagOption: [],
+            expandedKeys: [],
+            columns: [
+                {
+                    type: "selection",
+                    align: "center"
+                }, {
+                    title: 'API名称',
+                    dataIndex: 'name',
+                    key: 'name',
+                    width: 300,
+                }, {
+                    title: '路径',
+                    key: 'path',
+                    dataIndex: 'path',
+                }, {
+                    title: '请求方式',
+                    key: 'method',
+                    dataIndex: 'method',
+                    width: 100,
+                }, {
+                    title: '所属类目',
+                    key: 'categoryId',
+                    dataIndex: 'categoryId',
+                    width: 100,
+                    customRender: (text, row, index) => {
+                        return this.categoryDict[text];
+                    },
+                }, {
+                    title: '标签',
+                    key: 'tagIdList',
+                    dataIndex: 'tagIdList',
+                    width: 200,
+                    scopedSlots: {customRender: 'tagsSlot'}
+                }, {
+                    title: '状态',
+                    key: 'status',
+                    dataIndex: 'status',
+                    width: 100,
+                    customRender: (text, row, index) => {
+                        return this.statusDict[text];
+                    },
+                }, {
+                    title: 'API类型',
+                    key: 'type',
+                    dataIndex: 'type',
+                    width: 100,
+                    customRender: (text, row, index) => {
+                        return this.typeList[row.type].label;
+                    },
+                }, {
+                    title: '操作',
+                    dataIndex: 'action',
+                    key: 'action',
+                    width: 150,
+                    fixed: 'right',
+                    scopedSlots: {customRender: 'action'}
+                }
+            ],
+            pagination: {
+                current: 1,
+                total: 0,
+                size: "middle",
+                hideOnSinglePage: false,//只有一页时是否隐藏分页器
+                pageSize: 15,//每页条数
+                showTotal: total => `共 ${total} 条数据`,
+                showSizeChanger: true,
+                pageSizeOptions: ['15', '25', '50', '100'],
+            },
+            selectedRows: [],
+            selectedRowKeys: [],
+            formData: {
+                id: '',
+                name: '',
+                chinese: '',
+                categoryId: '',
+                type: '',
+                method: '',
+                path: '',
+                status: '',
+                protocol: '',
+                returnType: '',
+                tagIdList: [],
+                description: ''
+            },
+            tagDict: {},
+            categoryDict: {},
+            statusDict:{"0":"未提交", "1":"未发布", "2":"正常"},
+            typeList: [{
+                value: '1',
+                label: '注册API'
+            }, {
+                value: '2',
+                label: '生成API'
+            }, {
+                value: '3',
+                label: '服务编排'
+            }, {
+                value: '4',
+                label: '服务分组'
+            }],
+            methodList: [{
+                value: 'get',
+                label: 'GET'
+            }, {
+                value: 'post',
+                label: 'POST'
+            }, {
+                value: 'put',
+                label: 'PUT'
+            }, {
+                value: 'delete',
+                label: 'DELETE'
+            }],
+            ruleValidate: {
+                name: [{
+                    required: true, message: '必填', trigger: 'blur', transform(value) {
+                        return value.trim()
+                    }
+                }],
+            },
+        }
+    },
+    computed: {
+        windowH() {
+            return this.$store.state.app.bodyHeight;
+        },
+        windowW() {
+            return this.$store.state.app.bodyWidth;
+        }
+    },
+    methods: {
+        init() {
+            this.formData = {
+                id: '',
+                name: '',
+                chinese: '',
+                categoryId: '',
+                type: '',
+                method: '',
+                path: '',
+                status: '',
+                protocol: '',
+                returnType: 'json',
+                tagIdList: [],
+                description: ''
+            }
+        },
+        handleSearch() {
+            this.renderTable(
+                {
+                    ...this.searchConditions
+                }
+            )
+        },
+        renderTable(params = {}) {
+            this.loading = true
+            this.$http({
+                url: '/zuul/api-management/entity',
+                method: 'get',
+                params: {
+                    size: this.pagination.pageSize,
+                    ...params
+                }
+            }).then(result => {
+                if (result.data.success) {
+                    this.dataTables = result.data.data.results
+                    this.pagination.total = result.data.data.total
+                }
+                console.log("renderTable=", this.pagination)
+                this.loading = false
+            })
+        },
+        renderCategory() {
+            this.$http({
+                url: '/zuul/api-management/category/tree',
+                method: 'get',
+            }).then(result => {
+                if (result.data.success) {
+                    //console.log(result.data.data.treeData)
+                    this.treeData = result.data.data.treeData
+                    this.expandedKeys = result.data.data.expandedKeys
+                }
+            })
+        },
+        renderCategoryDict() {
+            this.$http({
+                url: '/zuul/api-management/category/raw',
+                method: 'get',
+            }).then(result => {
+                if (result.data.success) {
+                    //console.log("renderCategoryDict=", result.data.data)
+                    result.data.data.forEach((item, index) => {
+                        this.categoryDict[item.id] = item.name
+                    });
+                }
+            })
+        },
+        renderTagOption() {
+            this.tagOption = []
+            this.$http({
+                url: '/zuul/api-management/tag/raw',
+                method: 'get',
+            }).then(result => {
+                if (result.data.success) {
+                    result.data.data.forEach((item, index) => {
+                        this.tagOption.push({
+                            value: item.id,
+                            label: item.name,
+                        });
+                        this.tagDict[item.id] = item.name
+                    });
+                }
+            })
+        },
+        handleTableChange(pagination, filters, sorter) {
+            if (!!sorter['order']) {
+                this.searchConditions.sort = sorter['columnKey'] + ',' + (sorter['order'] == 'ascend' ? 'ASC' : 'DESC');
+            } else {
+                this.searchConditions.sort = 'id,ASC';
+            }
+            const pager = {...this.pagination};
+            pager.current = pagination.current;
+            pager.pageSize = pagination.pageSize;
+            this.pagination = pager;
+            this.renderTable({
+                size: pagination.pageSize,
+                page: pagination.current - 1,
+                ...this.searchConditions
+                /*sortField: sorter.field,
+                sortOrder: sorter.order,
+                ...filters*/
+            });
+        },
+        add() {
+            this.init()
+            this.titleDrawer = '新增'
+            this.formDrawer = true
+        },
+        edit(id) {
+            this.init()
+            this.loading = true
+            this.$http({
+                url: '/zuul/api-management/entity/' + id,
+                method: 'get',
+            }).then(result => {
+                if (result.data.success) {
+                    this.formData = result.data.data
+                }
+                this.loading = false
+                this.titleDrawer = '修改'
+                this.formDrawer = true
+            })
+        },
+        del(id) {
+            this.$confirm({
+                title: '信息提示',
+                okType: 'danger',
+                content: '确定删除?',
+                onOk: () => {
+                    this.$http
+                        .delete('/zuul/api-management/entity/' + id,)
+                        .then(result => {
+                            if (result.data.success) {
+                                this.$notification.success({
+                                    message: result.data.message,
+                                    duration: 2,
+                                })
+                                console.log("del=", this.pagination)
+                                this.pagination.current = GetPageByDelete(this.pagination.current, this.dataTables.length, 1)
+                                this.renderTable({
+                                    results: this.pagination.pageSize,
+                                    page: this.pagination.current - 1,
+                                    ...this.searchConditions
+                                })
+                            } else {
+                                this.$notification.error({
+                                    message: result.data.message,
+                                    duration: 2,
+                                })
+                            }
+                        })
+                }
+            })
+        },
+        //批量删除
+        multiDelete() {
+            var _this = this;
+            if (this.selectedRows.length === 0) {
+                this.$warning({
+                    title: '提示',
+                    content: '请至少选择一项!',
+                });
+            } else {
+                // this.selectedRows[i]
+                this.$confirm({
+                    title: '信息提示',
+                    content: '确定删除?',
+                    okText: '确定',
+                    okType: 'primary',
+                    cancelText: '取消',
+                    onOk() {
+                        _this.$http({
+                            url: '/zuul/api-management/entity',
+                            method: "delete",
+                            data: _this.selectedRows
+                        }).then(result => {
+                            if (result.data.success) {
+                                _this.$notification.success({
+                                    message: result.data.message,
+                                    duration: 2,
+                                })
+                                _this.selectionIds = []
+                                _this.selectedRows = []
+                                _this.renderTable()
+                            } else {
+                                _this.$notification.error({
+                                    message: result.data.message,
+                                    duration: 2,
+                                })
+                            }
+                        })
+                    },
+                    onCancel() {
+                    },
+                });
+            }
+        },
+        handleSubmit() {
+            this.$refs.formData.validate(valid => {
+                if (valid) {
+                    this.loading = true;
+                    this.$http({
+                        url: "/zuul/api-management/entity",
+                        method: "post",
+                        data: this.formData
+                    }).then(result => {
+                        if (result.data.success) {
+                            this.$notification['success']({
+                                message: "操作成功",
+                                description: result.data.message,
+                            });
+                            this.formDrawer = false;
+                            this.renderTable();
+                        }
+                        this.loading = false;
+                    });
+                } else {
+                    console.log('error submit!!');
+                    return false;
+                }
+            });
+        },
+        changeCollapsed(status) {
+            this.collapsedStatus = status;
+        },
+        onSelect(selectedKeys, info) {
+            console.log('selected', selectedKeys, info);
+        },
+        onCheck(checkedKeys, info) {
+            console.log('onCheck', checkedKeys, info);
+            this.searchConditions.categoryId = checkedKeys.join(",")
+            this.handleSearch()
+        },
+        //关闭抽屉
+        onClose() {
+            this.formDrawer = false;
+            this.submitLoading = false;
+            //this.$refs["ruleForm"].resetFields();
+        },
+        onSelectChange(selectedRowKeys, selectedRows) {
+            this.selectedRows = [];
+            if (selectedRows.length > 0) {
+                for (let i = 0; i < selectedRows.length; i++) {
+                    this.selectedRows.push(selectedRows[i].id);
+                }
+            }
+            this.selectedRowKeys = selectedRowKeys;
+        },
+        change(value, label, extra) {
+            console.log("value=", value)
+            console.log("label=", label)
+            console.log("extra=", extra)
+        }
+    },
+    mounted(){
+        this.renderTable()
+        this.renderCategory()
+        this.renderTagOption()
+        this.renderCategoryDict()
+    }
+}
+</script>
+
+<style scoped>
+
+</style>

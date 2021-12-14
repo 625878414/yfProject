@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <link rel="icon" href="<%= BASE_URL %>favicon.ico">
+    <title><%= htmlWebpackPlugin.options.title %></title>
+    <link rel="stylesheet" href="static/css/style.css" />
+    <link rel="stylesheet" href="static/font/iconfont.css" />
+    <link rel="stylesheet" href="static/css/white-theme.css" id="link-antd" />
+    <script src="static/js/three.min.js"></script>
+    <script src="static/js/config.js"></script>
+    <script src="static/js/velocity.min.js"></script>
+  </head>
+  <!--<body oncopy="return false" onselectstart="return false">-->
+  <body oncontextmenu='return false' ondragstart='return false' onselectstart ='return false' onselect='document.selection.empty()' oncopy='document.selection.empty()' onbeforecopy='return false'>
+    <noscript>
+      <strong>We're sorry but <%= htmlWebpackPlugin.options.title %> doesn't work properly without JavaScript enabled. Please enable it to continue.</strong>
+    </noscript>
+    <div id="app">
+      <div class="loading-source">
+        <span class="loading-dot"><i></i><i></i><i></i><i></i></span>
+        <span class="loading-text">资源加载中<i></i><i></i><i></i></span>
+      </div>
+    </div>
+    <!-- built files will be auto injected -->
+  </body>
+</html>

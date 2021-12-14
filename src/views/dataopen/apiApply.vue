@@ -1,0 +1,492 @@
+<style lang="less" scoped>
+.api-auth {
+  .page-header-search {
+    text-align: center;
+    margin-bottom: 16px;
+  }
+  .demo-loadmore-list {
+    min-height: 350px;
+  }
+  .tags {
+    margin-top: 10px;
+    cursor: pointer;
+  }
+}
+.demo-loadmore-list {
+  .ant-list-item-meta-content {
+    white-space: nowrap;
+    margin-right: 20px;
+  }
+}
+</style>
+<template>
+  <div class="api-auth page-content-body">
+    <div class="page-header-search">
+      <a-input-group compact>
+        <a-select
+          default-value="name"
+          size="large"
+          style="width: 120px"
+          v-model="searchWay"
+          @change="searchWayChange"
+        >
+          <a-select-option value="name"> API名称 </a-select-option>
+          <a-select-option value="path"> API路径 </a-select-option>
+        </a-select>
+        <a-input-search
+          size="large"
+          :placeholder="
+            searchWay === 'name'
+              ? '按API名称查询'
+              : searchWay === 'path'
+              ? '按API路径查询'
+              : searchWay === 'tags'
+              ? '按API标签查询'
+              : '按API描述查询'
+          "
+          style="width: 80%; max-width: 522px"
+          v-model="searchConditions[searchWay]"
+          @search="handleSearch"
+          enter-button="查询"
+        >
+        </a-input-search>
+        <a-button size="large" type="danger" style="margin-left: 20px" @click="init">重置</a-button>
+      </a-input-group>
+    </div>
+    <a-row :gutter="16">
+      <a-col :span="4">
+        <a-card title="API类目" :bordered="false">
+          <a-tree
+            :tree-data="treeData"
+            :expandedKeys="expandedKeys"
+            @select="onSelect"
+            @check="onCheck"
+          >
+            <span slot="title0010" style="color: #1890ff">sss</span>
+          </a-tree>
+        </a-card>
+        <br />
+        <a-card title="API标签" :bordered="false">
+          <!--                    <a-input-search placeholder="input search text" @search="onSearch" />-->
+          <div>
+            <a-tag
+              color="blue"
+              v-for="(item, index) in tagList"
+              :key="item.id"
+              class="tags"
+              @click="searchByTag(item.id)"
+            >
+              {{ item.name }}
+            </a-tag>
+          </div>
+        </a-card>
+      </a-col>
+      <a-col :span="20">
+        <a-card :bordered="false" style="padding: 0">
+          <!-- <div slot="title">
+            <a type="link">
+              按调用排序
+              <a-icon type="sort-ascending" />
+            </a>
+            <a-divider type="vertical" />
+            <a type="link">
+              按更新时间排序
+              <a-icon type="sort-ascending" />
+            </a>
+          </div> -->
+          <a-list
+            class="demo-loadmore-list"
+            :loading="loading"
+            item-layout="horizontal"
+            :data-source="data"
+            :pagination="pagination"
+          >
+            <a-list-item slot="renderItem" slot-scope="item, index">
+              <!-- <a-button icon="export" slot="actions">导出</a-button> -->
+              <a-button type="primary" icon="key" slot="actions" @click="showModal(item)"
+                >申请</a-button
+              >
+              <!--                            <a slot="actions">edit</a>
+                            <a slot="actions">more</a>-->
+              <a-list-item-meta>
+                <div slot="title">
+                  <!-- <a-checkbox @change="onChange"> </a-checkbox> -->
+                  <!-- <a href="javascript:;" @click="showDrawer">
+                                        {{ item.name }}
+                                    </a> -->
+                  <span>{{ item.name }}</span>
+                </div>
+                <template slot="description">
+                  <div>
+                    API分类：{{
+                      item.type === "0"
+                        ? "注册API"
+                        : item.type === "1"
+                        ? "生成API"
+                        : item.type === "2"
+                        ? "服务编排"
+                        : "服务分组"
+                    }}
+                    &nbsp;&nbsp;
+                    <!-- 创建人: {{ item.createBy }} -->
+                    &nbsp;&nbsp;更新时间:
+                    {{ item.createDate }}
+                    <!-- 累计调用量: 11 -->
+                  </div>
+                  <!--                                    <a-tag color="green">
+                                        {{ item.tags }}
+                                    </a-tag>-->
+                </template>
+              </a-list-item-meta>
+              <div>
+                {{ item.path }}
+              </div>
+            </a-list-item>
+          </a-list>
+        </a-card>
+      </a-col>
+    </a-row>
+    <a-modal
+      v-model="formModel"
+      title="申请API"
+      cancel-text="关闭"
+      @cancel="onClose"
+      ok-text="提交"
+      @ok="handleSubmit"
+    >
+      <a-form-model
+        ref="ruleForm"
+        :model="formData"
+        :rules="ruleValidate"
+        label-position="top"
+        layout="vertical"
+        :form="formDrawer"
+      >
+        <a-form-model-item label="API名称" prop="apiId">
+          <h3>{{ formData.name }}</h3>
+        </a-form-model-item>
+        <a-form-model-item label="调用次数" prop="requestCount" style="margin-bottom:0px">
+          <a-input-number
+            v-model="formData.requestCount"
+            :min="1"
+            :max="2000"
+            :disabled="formData.requestCountSwitch"
+          />
+          
+        </a-form-model-item>
+        <a-form-model-item>
+          <a-checkbox
+            v-model="formData.requestCountSwitch"
+            @change="changeRequestCount"
+            style="margin-top: 5px; display: block"
+          >
+            不限制调用次数
+          </a-checkbox>
+        </a-form-model-item>
+        <a-form-model-item label="调用周期" prop="requestTimeLimitSwitch">
+          <a-range-picker
+            @change="onChangeRangePicker"
+            :disabled="formData.requestTimeLimitSwitch"
+            v-model="timeLimit"
+          />
+          <a-checkbox
+            v-model="formData.requestTimeLimitSwitch"
+            @change="changeRequestTime"
+            style="margin-top: 5px"
+          >
+            不限制调用周期
+          </a-checkbox>
+        </a-form-model-item>
+        <a-form-model-item label="申请说明">
+          <a-textarea
+            v-model="formData.reviewRemark"
+            placeholder="最多输入100个字符"
+            :maxLength="100"
+            :auto-size="{ minRows: 3, maxRows: 5 }"
+          />
+        </a-form-model-item>
+      </a-form-model>
+    </a-modal>
+    <a-drawer
+      title="Create a new account"
+      :width="720"
+      :visible="formDrawer"
+      :body-style="{ paddingBottom: '80px' }"
+      @close="onClose"
+    >
+      <div
+        :style="{
+          position: 'absolute',
+          right: 0,
+          bottom: 0,
+          width: '100%',
+          borderTop: '1px solid #e9e9e9',
+          padding: '10px 16px',
+          background: '#fff',
+          textAlign: 'right',
+          zIndex: 1,
+        }"
+      >
+        <a-button :style="{ marginRight: '8px' }" @click="onClose"> Cancel </a-button>
+        <a-button type="primary" @click="onClose"> Submit </a-button>
+      </div>
+    </a-drawer>
+  </div>
+</template>
+
+<script>
+export default {
+  name: "apiAuth",
+  data() {
+    return {
+      current: 1,
+      loading: true,
+      loadingMore: false,
+      showLoadingMore: true,
+      formModel: false,
+      formDrawer: false,
+      data: [],
+      treeData: [],
+      expandedKeys: [],
+      tagList: [],
+      test: "",
+      formData: {
+        id: "",
+        apiId: "", //用户id
+        requestCount: 1, //调用次数
+        requestCountSwitch: false,
+        requestTimeStart: "",
+        requestTimeEnd: "",
+        requestTimeLimitSwitch: false,
+        reviewRemark: "", //申请说明,
+        name: "",
+      },
+      pagination: {
+        current: 1,
+        total: 0,
+        size: "middle",
+        hideOnSinglePage: false, //只有一页时是否隐藏分页器
+        pageSize: 10, //每页条数
+        showTotal: (total) => `共 ${total} 条`,
+        // showSizeChanger: true,
+        // pageSizeOptions: ['10', '25', '50', '100'],
+        onChange: (page) => {
+          const pager = { ...this.pagination };
+          pager.current = page;
+          this.searchConditions.page = page - 1;
+          this.pagination = pager;
+          this.renderTable({
+            size: this.pagination.pageSize,
+            page: page - 1,
+            ...this.searchConditions,
+          });
+        },
+      },
+      ruleValidate: {
+        name: [
+          {
+            required: true,
+            message: "必填",
+            trigger: "blur",
+            transform(value) {
+              return value.trim();
+            },
+          },
+        ],
+        requestCount: [{ required: true, message: "必填", trigger: "change" }],
+      },
+      searchConditions: {
+        name: "",
+        path: "",
+        categoryId: "",
+        tags: "",
+        description: "",
+      },
+      searchWay: "name",
+      timeLimit: [],
+    };
+  },
+  mounted() {
+    this.renderTable();
+    this.renderTagList();
+    this.renderCategory();
+  },
+  methods: {
+    formInit() {
+      this.formData = {
+        id: "",
+        apiId: "", //用户id
+        requestCount: 1, //调用次数
+        requestCountSwitch: false,
+        requestTimeStart: "",
+        requestTimeEnd: "",
+        requestTimeLimitSwitch: false,
+        reviewRemark: "", //申请说明
+        name: "",
+      };
+      //清空select
+      //this.$refs.type.clearSingleSelect();
+    },
+    showModal(item) {
+      console.log("showModal=", item);
+      this.formModel = true;
+      this.formInit();
+      this.timeLimit = [];
+      this.formData.apiId = item.id;
+      this.formData.name = item.name;
+    },
+    showDrawer() {
+      this.formDrawer = true;
+    },
+    onChangeRangePicker(dates, dateStrings) {
+      this.formData.requestTimeStart = dateStrings[0] + " 00:00:00";
+      this.formData.requestTimeEnd = dateStrings[1] + " 23:59:59";
+    },
+    onClose() {
+      if (this.formModel) {
+        this.formModel = false;
+      }
+      if (this.formDrawer) {
+        this.formDrawer = false;
+      }
+    },
+    renderTable(params = {}) {
+      this.loading = true;
+      this.$http({
+        url: "/zuul/api-management/entity",
+        method: "get",
+        params: {
+          size: this.pagination.pageSize,
+          //   page:this.searchConditions.page,
+          //   page:this.pagination.page,
+          ...params,
+        },
+      }).then((result) => {
+        if (result.data.success) {
+          console.log(result.data);
+          this.data = result.data.data.results;
+          console.log("data=", this.data);
+          this.pagination.total = result.data.data.total;
+        }
+        this.loading = false;
+      });
+    },
+    renderTagList() {
+      this.$http({
+        url: "/zuul/api-management/tag/raw",
+        method: "get",
+      }).then((result) => {
+        if (result.data.success) {
+          this.tagList = result.data.data;
+        }
+      });
+    },
+    renderCategory() {
+      this.$http({
+        url: "/zuul/api-management/category/tree",
+        method: "get",
+      }).then((result) => {
+        if (result.data.success) {
+          //console.log(result.data.data.treeData)
+          this.treeData = result.data.data.treeData;
+          this.expandedKeys = result.data.data.expandedKeys;
+        }
+      });
+    },
+    onSelect(selectedKeys, info) {
+      console.log("selected", selectedKeys, info);
+      this.searchConditions.categoryId = selectedKeys.join(",");
+      this.handleSearch();
+    },
+    onCheck(checkedKeys, info) {
+      console.log("onCheck", checkedKeys, info);
+      // this.searchConditions.categoryId = checkedKeys.join(",");
+      // this.handleSearch();
+    },
+    handleSubmit() {
+      //this.$refs.formData.validate(valid => {
+      //if (valid) {
+      this.$refs.ruleForm.validate((valid) => {
+        if (valid) {
+          if (this.timeLimit.length === 0 && !this.formData.requestTimeLimitSwitch) {
+            this.$message.error("请选择调用周期", 1);
+            return;
+          }
+          this.loading = true;
+          this.$http({
+            url: "/zuul/api-management/authorization",
+            method: "post",
+            data: this.formData,
+          }).then((result) => {
+            if (result.data.success) {
+              this.$notification["success"]({
+                message: "操作成功",
+                description: result.data.message,
+              });
+              this.formModel = false;
+
+              this.renderTable();
+            }
+            this.loading = false;
+          });
+          /*} else {
+                    console.log('error submit!!');
+                    return false;
+                }
+          ,  });*/
+        }
+      });
+    },
+    handleSearch() {
+      console.log(this.searchConditions);
+      this.searchConditions.page = 0;
+      this.pagination.current = 1;
+      //   this.pagination.current=this.searchConditions.page+1
+      this.renderTable({
+        ...this.searchConditions,
+      });
+    },
+    searchWayChange() {
+      this.searchConditions = {
+        name: "",
+        path: "",
+        categoryId: "",
+        tags: "",
+        description: "",
+      };
+    },
+    init() {
+      this.searchConditions = {
+        name: "",
+        path: "",
+        categoryId: "",
+        tags: "",
+        description: "",
+      };
+    },
+    searchByTag(id) {
+      this.searchConditions.tags = id;
+      this.handleSearch();
+    },
+    changeRequestCount(e) {
+      if (this.formData.requestCountSwitch) {
+        this.formData.requestCount = "";
+        this.$refs.ruleForm.clearValidate('requestCount');
+        this.ruleValidate={}
+      } else {
+        this.formData.requestCount = 1;
+        this.ruleValidate={
+          requestCount: [{ required: true, message: "必填", trigger: "change" }],
+        }
+      }
+    },
+    changeRequestTime() {
+      if (this.formData.requestTimeLimitSwitch) {
+        this.timeLimit = [];
+        this.formData.requestTimeStart = "";
+        this.formData.requestTimeEnd = "";
+      }
+    },
+  },
+};
+</script>

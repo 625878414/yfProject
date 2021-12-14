@@ -1,0 +1,104 @@
+<template>
+  <a-layout id="layout">
+    <a-layout-sider v-model="collapsed" :trigger="null" collapsible>
+      <div class="logo">
+        研判分析
+      </div>
+      <a-menu theme="dark" mode="inline" :selectedKeys="[$route.path]">
+        <a-menu-item :key="'/dataManage-init'" @click="show">
+          <a-icon type="home" />
+          <span>初始化数据仓库</span>
+        </a-menu-item>
+        <a-menu-item :key="'/dataManage-source'" @click="show">
+          <a-icon type="menu" />
+          <span>数据源管理</span>
+        </a-menu-item>
+        <a-menu-item :key="'/dataManage-unit'" @click="show">
+          <a-icon type="dollar" />
+          <span>元数据管理</span>
+        </a-menu-item>
+        <a-menu-item :key="'/dataManage-processList'" @click="show">
+          <a-icon type="unordered-list" />
+          <span>流程列表</span>
+        </a-menu-item>
+        <a-menu-item :key="'/catalog'" @click="show">
+          <a-icon type="unordered-list" />
+          <span>资产目录</span>
+        </a-menu-item>
+      </a-menu>
+    </a-layout-sider>
+    <a-layout>
+      <a-layout-content
+        :style="{
+          margin: '24px 16px',
+          padding: '24px',
+          background: '#fff',
+          minHeight: '280px'
+        }"
+      >
+        <router-view></router-view>
+      </a-layout-content>
+    </a-layout>
+  </a-layout>
+</template>
+<script>
+export default {
+  data() {
+    return {
+      collapsed: false,
+      key: "1",
+      currentPath: ""
+    };
+  },
+  methods: {
+    show(e) {
+      // console.log(e);
+      if (e.key == "/dataManage-init") {
+        this.$router.push("/dataManage-init");
+      } else if (e.key == "/dataManage-source") {
+        this.$router.push("/dataManage-source");
+      } else if (e.key == "/dataManage-unit") {
+        this.$router.push("/dataManage-unit");
+      } else if (e.key == "/dataManage-access") {
+        this.$router.push("/dataManage-access");
+      } else if (e.key == "/dataManage-processList") {
+        this.$router.push("/dataManage-processList");
+      } else if (e.key == "/catalog") {
+        this.$router.push("/catalog");
+      }
+    }
+  },
+  mounted() {
+    console.log(this.$router);
+  }
+};
+</script>
+<style>
+#layout {
+  height: 100vh;
+}
+#layout .trigger {
+  font-size: 18px;
+  line-height: 64px;
+  padding: 0 24px;
+  cursor: pointer;
+  transition: color 0.3s;
+}
+
+#layout .trigger:hover {
+  color: #1890ff;
+}
+
+#layout .logo {
+  height: 32px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  margin: 16px;
+  text-align: center;
+  line-height: 32px;
+}
+.header {
+  display: flex;
+  justify-content: space-between;
+}
+</style>

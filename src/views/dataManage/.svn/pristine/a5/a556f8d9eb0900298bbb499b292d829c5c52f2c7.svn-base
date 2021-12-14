@@ -1,0 +1,749 @@
+<template>
+  <div class="processList">
+    <!-- 头部搜索与新增 -->
+    <div class="les-table-toolbar">
+      <a-button-group>
+        <a-button type="primary" icon="plus" @click="add" style="margin-right:10px">
+          新增
+        </a-button>
+      </a-button-group>
+      <div>
+        <a-input
+          placeholder="流程名称"
+          :maxLength="10"
+          style="width: 200px;margin-right: 5px"
+          allowClear
+          v-model="searchConditions.name"
+        >
+          <a-icon slot="suffix" type="search" />
+        </a-input>
+        <a-select
+          style="width:260px;margin-left:5px"
+          allowClear
+          placeholder="元数据"
+          v-model="searchConditions.dataEntityName"
+        >
+          <a-select-option v-for="meta in metaDataList" :key="meta.value" :value="meta.label">
+            {{ meta.label }}
+          </a-select-option>
+        </a-select>
+        <a-button type="primary" icon="search" style="margin-left:5px" @click="handleSearch"
+          >查询</a-button
+        >
+        <a-button type="danger" icon="close-circle" style="margin-left:5px" @click="handleReset"
+          >重置</a-button
+        >
+      </div>
+    </div>
+    <!-- 表格 -->
+    <vue-scroll :style="'height:' + (bodyHeight - 60) + 'px;'">
+      <a-table
+        :columns="columns"
+        :data-source="tableData"
+        rowKey="id"
+        style="width: 100%"
+        :pagination="false"
+        size="small"
+        :loading="loading"
+      >
+        <template slot="status" slot-scope="text, record">
+          <a-tag color="green" v-if="text > 0" class="tag" @mouseover="showStatus(record)"
+            >运行</a-tag
+          >
+          <a-tag color="red" v-else class="tag" @mouseover="showStatus(record)">停止</a-tag>
+        </template>
+        <template slot="action" slot-scope="row">
+          <a-button
+            style="margin-right:5px"
+            type="primary"
+            icon="edit"
+            size="small"
+            @click="enterProcess(row.processGroupId)"
+            >进入流程</a-button
+          >
+          <a-button
+            type="primary"
+            icon="diff"
+            size="small"
+            style="margin-right:5px"
+            @click="show(row.dataEntityId)"
+            >样本数据</a-button
+          >
+          <!-- <a-button
+            type="primary"
+            icon="eye"
+            size="small"
+            style="margin-right:5px"
+            @click="showStatus(row)"
+            >查看状态</a-button
+          > -->
+          <a-button type="danger" icon="delete" size="small" @click="del(row)">删除</a-button>
+        </template>
+      </a-table>
+    </vue-scroll>
+    <a-pagination
+      :defaultPageSize="20"
+      style="text-align:right;margin:10px"
+      :showQuickJumper="this.total > 20"
+      :show-total="total => `共 ${total} 条`"
+      :total="total"
+      @change="pageChange"
+      :current="currentPage"
+    >
+    </a-pagination>
+    <!-- 表单抽屉 -->
+    <a-drawer
+      :visible="visible"
+      :maskClosable="false"
+      width="500px"
+      @close="addClose"
+      title="新增流程"
+    >
+      <div class="access">
+        <div class="form">
+          <h3 style="margin-bottom:10px">基本信息</h3>
+          <a-form-model :model="formData" layout="vertical" ref="formModel" :rules="ruleValidate">
+            <a-form-model-item label="流程名称" prop="name">
+              <a-input v-model="formData.name" placeholder="请输入流程名称" :minLength="20" />
+            </a-form-model-item>
+            <a-form-model-item label="来源" prop="dataEntityId">
+              <a-select
+                v-model="formData.dataEntityId"
+                placeholder="请选择元数据"
+                @change="dataEntityNameChange"
+              >
+                <a-select-option
+                  v-for="meta in metaDataList1"
+                  :value="meta.value"
+                  :key="meta.value"
+                >
+                  {{ meta.label }}
+                </a-select-option>
+              </a-select>
+            </a-form-model-item>
+          </a-form-model>
+          <div class="les-drawer-form-footer">
+            <a-button type="primary" @click="createProcess">创建流程</a-button>
+            <a-button type="danger" @click="save">保存</a-button>
+          </div>
+        </div>
+      </div>
+    </a-drawer>
+    <!-- 样本数据抽屉 -->
+    <a-drawer
+      :visible="previewVisible"
+      :maskClosable="true"
+      width="50%"
+      @close="onClose"
+      title="样本数据"
+    >
+      <vue-scroll>
+        <a-table
+          :columns="previewCol"
+          :data-source="previewData"
+          :rowKey="
+            (record, index) => {
+              return index;
+            }
+          "
+          style="width: 100%"
+          :pagination="true"
+          :loading="preDataLoading"
+        >
+        </a-table>
+      </vue-scroll>
+    </a-drawer>
+    <!-- 状态模态框 -->
+    <a-modal
+      :visible="statusVisable"
+      :maskClosable="true"
+      width="350px"
+      @cancel="onClose"
+      :closable="false"
+      dialogClass="status-modal"
+    >
+      <a-spin :spinning="spinning">
+        <div class="status">
+          <ul>
+            <li>
+              <span>{{ statusData.status.name }}</span>
+            </li>
+            <li>
+              <div>
+                <span
+                  ><img
+                    style="width:10px;height:10px"
+                    src="../dataManage/assets/icon/triangle.png"
+                    alt=""
+                /></span>
+                <span>{{ statusData.runningCount }}</span>
+                <span><img src="../dataManage/assets/icon/square.png" alt=""/></span>
+                <span>{{ statusData.stoppedCount }}</span>
+                <span><img src="../dataManage/assets/icon/exclamationMark.png" alt=""/></span>
+                <span>{{ statusData.invalidCount }}</span>
+                <span
+                  ><img src="../dataManage/assets/icon/lightning.png" alt="" style="margin-top:2px"
+                /></span>
+              </div>
+              <a-tooltip placement="right" overlayClassName="haozi">
+                <img
+                  src="../dataManage/assets/icon/txt.png"
+                  alt=""
+                  v-show="statusData.bulletins.length > 0"
+                />
+                <template slot="title">
+                  <vue-scroll style="height:400px">
+                    <ul class="tooltip">
+                      <li v-for="(message, index) in bulletinMessage" :key="index">
+                        <div>
+                          ●
+                          <span>{{ message.timestamp }}--</span>
+                          <span>{{ message.nodeAddress }}</span>
+                        </div>
+                        <p>{{ message.message }}</p>
+                      </li>
+                    </ul>
+                  </vue-scroll>
+                </template>
+              </a-tooltip>
+            </li>
+            <li class="li-text1">
+              <span>队列</span>
+              <b>{{ statusData.status.aggregateSnapshot.queued }}</b>
+            </li>
+            <li class="li-text">
+              <span>进入</span>
+              <b>{{ statusData.status.aggregateSnapshot.input }}</b>
+              <b>5min</b>
+            </li>
+            <li class="li-text">
+              <span>读/写</span>
+              <div>
+                <b>{{ statusData.status.aggregateSnapshot.read }}/</b>
+                <b>{{ statusData.status.aggregateSnapshot.written }}</b>
+              </div>
+              <b>5min</b>
+            </li>
+            <li class="li-text">
+              <span>输出</span>
+              <b>{{ statusData.status.aggregateSnapshot.output }}</b>
+              <b>5min</b>
+            </li>
+          </ul>
+        </div>
+      </a-spin>
+    </a-modal>
+  </div>
+</template>
+
+<script>
+const nifiUrl = "http://192.168.110.57:9090"; //公司环境
+// const nifiUrl="http://hdp2.cdjj.com:9090"   //成都环境
+const ProcessGroupId = "835289a5-0179-1000-0000-000042c7cfc0"; //公司nifi组ID
+// const processGroupId="b38796bf-017a-1000-0000-0000682434cf" //成都nifiID
+import { GetPageByDelete } from "../../libs/util";
+export default {
+  name: "processList",
+  data() {
+    return {
+      columns: [
+        {
+          dataIndex: "index",
+          title: "序号",
+          align: "center",
+          customRender: (text, record, index) => index + 1,
+          width: 50
+        },
+        {
+          dataIndex: "name",
+          title: "流程名称",
+          align: "center"
+        },
+        {
+          dataIndex: "scheduleMethod",
+          title: "调度方式",
+          align: "center"
+        },
+        {
+          dataIndex: "schedulingPeriod",
+          title: "调度信息",
+          align: "center"
+        },
+        {
+          dataIndex: "dataEntityName",
+          title: "元数据名称",
+          align: "center"
+        },
+        {
+          title: "状态",
+          dataIndex: "runningCount",
+          align: "center",
+          scopedSlots: { customRender: "status" },
+          align: "center"
+        },
+        {
+          title: "操作",
+          key: "action",
+          width: 180,
+          scopedSlots: { customRender: "action" },
+          align: "center",
+          width: 400
+        }
+      ],
+      tableData: [
+        // {
+        //   name:"过车流程",
+        //   scheduleMethod:"Timer driven",
+        //   dataEntityName:"ysj_gc",
+        //   runningCount:0,
+        //   schedulingPeriod:"300 sec"
+        // }
+      ],
+      formData: {
+        name: "",
+        dataEntityName: undefined,
+        dataEntityId: undefined,
+        processGroupId: ""
+      },
+      visible: false,
+      ruleValidate: {
+        name: [{ required: true, message: "必填", trigger: "change" }],
+        dataEntityId: [{ required: true, message: "必填", trigger: "change" }]
+      },
+      metaDataList: [],
+      metaDataList1: [],
+      loading: false,
+      total: 0,
+      currentPage: 1,
+      searchConditions: {
+        name: "",
+        page: 0,
+        size: 20,
+        dataEntityName: undefined
+      },
+      previewVisible: false,
+      previewCol: [
+        {
+          dataIndex: "index",
+          title: "序号",
+          align: "center",
+          customRender: (text, record, index) => index + 1,
+          width: 50
+        }
+      ],
+      previewData: [],
+      version: Number,
+      statusVisable: false,
+      statusData: {
+        status: {
+          name: "",
+          aggregateSnapshot: {}
+        },
+        bulletins: []
+      },
+      spinning: false,
+      bulletinMessage: [],
+      // tooltip: {
+      //   width: 1000 + "px"
+      // }
+      preDataLoading: false
+    };
+  },
+  methods: {
+    add() {
+      this.resetFields();
+      this.visible = true;
+      this.formData = {
+        // processGroupId: "",
+        name: "",
+        // scheduleMethod: undefined,
+        // schedulingPeriod: "",
+        dataEntityName: undefined,
+        processGroupId: "",
+        dataEntityId: undefined
+      };
+    },
+    onClose() {
+      this.previewVisible = false;
+      this.statusVisable = false;
+    },
+    // 获取元数据字典
+    getMetaData() {
+      this.$http.get("/zuul/lmanage/dataEntity/dict").then(res => {
+        console.log(res.data.data);
+        this.metaDataList = res.data.data;
+        this.metaDataList1 = res.data.data;
+      });
+    },
+    // 创建nifi流程
+    createProcess() {
+      this.$refs.formModel.validate(valid => {
+        if (valid) {
+          this.$http
+            .get("/api/nifi-api/flow/process-groups/" + ProcessGroupId)
+            // .get("/api/nifi-api/flow/process-groups/835289a5-0179-1000-0000-000042c7cfc0")
+            .then(res => {
+              console.log(res.data.processGroupFlow.flow.processGroups);
+              let processors = res.data.processGroupFlow.flow.processGroups;
+              // 查看是否有重复的nifi流程名称
+              let flag = processors.some(item => {
+                return item.component.name === this.formData.name;
+              });
+              let body = {
+                revision: {
+                  clientId: "1234",
+                  version: 0
+                },
+                component: {
+                  name: this.formData.name,
+                  position: {
+                    x: 1400 + (processors.length % 4) * 400,
+                    y: parseInt(processors.length / 4) * 200
+                  }
+                }
+              };
+              console.log(flag);
+              // nifi流程名称已存在
+              if (flag) {
+                this.$confirm({
+                  title: "流程已存在",
+                  content: "是否继续创建",
+                  okText: "确认",
+                  cancelText: "取消",
+                  onOk: () => {
+                    this.create(body);
+                  }
+                });
+              } else {
+                // console.log(JSON.stringify(body));
+                this.create(body);
+              }
+            });
+        }
+      });
+    },
+    // nifi创建流程的接口
+    create(body) {
+      this.$http({
+        url: "/api/nifi-api/process-groups/" + ProcessGroupId + "/process-groups/",
+        method: "post",
+        data: body,
+        headers: {
+          "Content-Type": "application/json"
+        }
+      }).then(res => {
+        console.log(res.data.id);
+        this.formData.processGroupId = res.data.id;
+        console.log();
+        window.open(nifiUrl + "/nifi/?processGroupId=" + ProcessGroupId);
+      });
+    },
+    // 保存流程，点击保存之前 需要先创建流程
+    //如果流程创建成功，会返回流程id.如果流程id不存在 则提示 流程未创建
+    save() {
+      if (this.formData.processGroupId) {
+        this.$http({
+          method: "post",
+          url: "/zuul/lmanage/accessFlow/save",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          data: this.formData
+        }).then(res => {
+          if (res.data.success) {
+            this.$notification.success({
+              message: "操作成功",
+              duration: 2
+            });
+            this.visible = false;
+            this.renderTable();
+          } else {
+            this.$notification.error({
+              message: "操作失败",
+              duration: 2
+            });
+          }
+        });
+      } else {
+        this.$message.error("流程不存在,请先创建流程", 2);
+      }
+    },
+    resetFields() {
+      try {
+        this.$refs.formModel.resetFields();
+      } catch (e) {
+        // console.log(e);
+      }
+    },
+    // 获取根据当前选择的元数据的value 来获取元数据的名称
+    dataEntityNameChange(value) {
+      // console.log(value);
+      let obj = this.metaDataList1.find(item => {
+        return value == item.value;
+      });
+      console.log(obj.label);
+      this.formData.dataEntityName = obj.label;
+      console.log(this.formData);
+    },
+    // 渲染表格
+    renderTable() {
+      this.loading = true;
+      this.$http({
+        method: "get",
+        params: {
+          page: this.searchConditions.page,
+          size: this.searchConditions.size,
+          name: this.searchConditions.name,
+          dataEntityName: this.searchConditions.dataEntityName
+        },
+        url: "/zuul/lmanage/accessFlow/page"
+      }).then(res => {
+        if (res.data.success) {
+          this.tableData = res.data.data.results;
+          console.log(this.tableData);
+          this.total = res.data.data.total;
+        }
+        this.loading = false;
+      });
+    },
+    pageChange(currentPage) {
+      this.currentPage = currentPage;
+      this.searchConditions.page = currentPage - 1;
+      console.log(this.searchConditions.page);
+      this.renderTable();
+    },
+    handleSearch(value) {
+      this.searchConditions.page = 0;
+      this.currentPage = 1;
+      // console.log(value);
+      this.renderTable();
+    },
+    // 进入流程
+    enterProcess(processGroupId) {
+      let nifi = window.open(`${nifiUrl}/nifi/?processGroupId=${processGroupId}&componentIds=`);
+      let loop = setInterval(() => {
+        if (nifi.closed) {
+          location.reload();
+          clearInterval(loop);
+        }
+      }, 1000);
+    },
+    // 获取样本数据
+    show(dataEntityId) {
+      this.previewVisible = true;
+      this.preDataLoading = true;
+      this.previewCol = [];
+      this.previewData = [];
+      this.$http.get("/zuul/lmanage/accessFlow/dataSample/" + dataEntityId).then(res => {
+        console.log(res);
+        for (const key in res.data.data.detail[0]) {
+          res.data.data.columns.forEach(item => {
+            if (item.columnName == key.toUpperCase()) {
+              this.previewCol.push({
+                title: item.comment == "" || item.comment == null ? key : key + `(${item.comment})`,
+                dataIndex: key,
+                align: "center"
+              });
+            }
+          });
+        }
+        console.log(this.previewCol);
+        this.previewData = res.data.data.detail;
+      });
+      this.preDataLoading = false;
+    },
+    del(row) {
+      this.$http.get(`/api/nifi-api/process-groups/${row.processGroupId}`).then(res => {
+        // console.log(res.data.status.aggregateSnapshot.queuedCount);
+        // this.version = res.data.revision.version;
+        // console.log(this.version);
+        //判断流程是否在运行,或者是否有残留数据
+        if (
+          res.data.component.runningCount > 0 ||
+          res.data.status.aggregateSnapshot.queuedCount != "0"
+        ) {
+          this.$confirm({
+            title: "此条流程正在运行或存在残留数据",
+            content: "是否进入NIFI页面删除",
+            okText: "进入",
+            cancelText: "取消",
+            onOk: () => {
+              window.open(`${nifiUrl}/nifi/?processGroupId=${row.processGroupId}&componentIds=`);
+            }
+          });
+        } else {
+          //如果判断此流程中无残留数据,且不在运行中,则可以删除
+          this.$confirm({
+            title: "删除确认",
+            content: "是否删除此流程",
+            okType: "danger",
+            cancelText: "取消",
+            onOk: () => {
+              this.$http({
+                method: "delete",
+                url: `/zuul/lmanage/accessFlow/delete/${row.id}`,
+                params: {
+                  processGroupId: row.processGroupId
+                }
+              }).then(res => {
+                if (res.data.success) {
+                  this.$notification.success({
+                    message: "删除成功",
+                    duration: 2
+                  });
+                  this.searchConditions.page = GetPageByDelete(
+                    this.searchConditions.page,
+                    this.tableData.length,
+                    1
+                  );
+                  this.renderTable();
+                } else {
+                  this.$notification.error({
+                    message: "删除失败",
+                    duration: 2
+                  });
+                }
+              });
+            }
+          });
+        }
+      });
+    },
+    // 获取nifi流程状态信息
+    showStatus(row) {
+      this.statusVisable = true;
+      this.spinning = true;
+      this.$http
+        // /app/nifi-api/process-groups/5930caba-233c-30ad-b3b7-a046997f9a55
+        .get("/api/nifi-api/process-groups/" + row.processGroupId)
+        .then(res => {
+          console.log(res);
+          this.statusData = res.data;
+          if (res.status == 200) {
+            this.statusData = res.data;
+            this.statusData.bulletins.forEach(item => {
+              let { timestamp, nodeAddress, message } = item.bulletin;
+              this.bulletinMessage.push({ timestamp, nodeAddress, message });
+            });
+            this.spinning = false;
+            console.log(this.bulletinMessage);
+          } else {
+            this.$message.error("获取状态信息失败", 2);
+            this.spinning = false;
+          }
+        });
+    },
+    addClose() {
+      this.$confirm({
+        title: "提示",
+        content: h => <h3 style="color:red">流程还未保存,是否关闭</h3>,
+        okText: "关闭",
+        okType: "danger",
+        cancelText: "取消",
+        onOk: () => {
+          this.visible = false;
+        }
+      });
+    },
+    handleReset() {
+      this.searchConditions.name = "";
+      this.searchConditions.dataEntityName = undefined;
+    }
+  },
+  mounted() {
+    this.getMetaData();
+    this.renderTable();
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    }
+  }
+};
+</script>
+
+<style scoped lang="less">
+.status {
+  height: 140px;
+  width: 350px;
+  border: 1px solid #8c8c8c;
+  border-radius: 5px;
+  ul li:nth-child(1) {
+    background-color: #b0bec6;
+  }
+  ul li:nth-child(2) {
+    span {
+      margin-right: 10px;
+    }
+    img {
+      margin-bottom: 3px;
+    }
+  }
+  li span:first-child {
+    margin-left: 10px;
+  }
+  ul li:nth-child(2) {
+    background-color: #dfe5e8;
+    display: flex;
+    justify-content: space-between;
+  }
+  .li-text1 {
+    :last-child {
+      margin-left: 96px;
+    }
+    :first-child {
+      font-weight: bolder;
+    }
+  }
+  .li-text {
+    display: flex;
+    justify-content: space-between;
+    :last-child {
+      margin-right: 10px;
+    }
+    :first-child {
+      font-weight: bolder;
+    }
+  }
+  ul li:nth-child(5) {
+    background-color: #f4f5f7;
+    :nth-child(2) {
+      margin-right: 10px;
+      color: #968387;
+    }
+  }
+  ul li:nth-child(4) {
+    :nth-child(2) {
+      color: #968387;
+    }
+  }
+  ul li:nth-child(3) {
+    background-color: #f4f5f7;
+    margin-top: 8px;
+    :nth-child(2) {
+      color: #968387;
+    }
+  }
+  ul li:nth-child(6) {
+    :nth-child(2) {
+      margin-left: 10px;
+      margin-right: 15px;
+      color: #968387;
+    }
+  }
+}
+.tag.ant-tag {
+  cursor: pointer;
+}
+</style>
+<style>
+.status-modal .ant-modal-footer {
+  display: none;
+}
+.status-modal .ant-modal-body {
+  padding: 0px;
+}
+.haozi .ant-tooltip-inner {
+  width: 400px;
+}
+</style>

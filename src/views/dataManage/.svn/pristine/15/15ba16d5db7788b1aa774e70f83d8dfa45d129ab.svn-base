@@ -1,0 +1,330 @@
+<template>
+  <div class="Form">
+    <a-form-model
+      :model="formChild"
+      layout="vertical"
+      :rules="ruleValidate"
+      ref="formModel"
+      :selfUpdate="true"
+    >
+      <div v-show="isHive == 'hive'">
+        是否创建全局索引:
+        <a-switch v-model="formChild.createIndex" @change="onChange" :disabled="notEditable" />
+      </div>
+      <a-form-model-item
+        label="名称"
+        prop="name"
+        :style="`margin-bottom:${formChild.createIndex ? '0px' : '24px'}`"
+        :disabled="notEditable"
+      >
+        <a-input
+          v-model="formChild.name"
+          :disabled="isEdit"
+          placeholder="名称在选取目录并填写中文名称后自动生成"
+          @change="nameChange"
+        ></a-input>
+      </a-form-model-item>
+      <a-form-model-item
+        label="中文名称"
+        :style="`margin-bottom:${formChild.createIndex ? '0px' : '24px'}`"
+        :disabled="isEdit"
+        prop="aliases"
+      >
+        <a-input
+          v-model="formChild.aliases"
+          placeholder="最输入20个字符"
+          :maxLength="20"
+          @change="aliasesChange"
+        ></a-input>
+      </a-form-model-item>
+      <div v-show="formChild.createIndex" class="selectIndex">
+        <a-form-model-item label="精确索引" style="margin-bottom:0px">
+          <a-select
+            v-model="accurateValue"
+            mode="multiple"
+            placeholder="请选择精确检索"
+            style="width: 100%"
+            @select="selectIndex"
+            @deselect="deselectAcc"
+            :disabled="notEditable"
+          >
+            <a-select-option v-for="item in indexList" :key="item">
+              {{ item }}
+            </a-select-option>
+          </a-select>
+        </a-form-model-item>
+        <a-form-model-item label="模糊索引" style="margin-bottom:0px">
+          <a-select
+            v-model="blurryValue"
+            mode="multiple"
+            placeholder="请选择模糊检索"
+            style="width: 100%"
+            @select="selectIndex"
+            @deselect="deselectBlu"
+            :disabled="notEditable"
+          >
+            <a-select-option v-for="item in indexList" :key="item">
+              {{ item }}
+            </a-select-option>
+          </a-select>
+        </a-form-model-item>
+        <a-form-model-item label="索引" style="margin-bottom:0px" required>
+          <span>
+            索引构成:
+            {{ idShow.join("_") }}
+          </span>
+          <a-select
+            v-model="idValue"
+            mode="multiple"
+            placeholder="请选择用于拼接ID的字段"
+            style="width: 100%"
+            @select="selectForId"
+            @deselect="deselectForId"
+            :disabled="notEditable"
+          >
+            <a-select-option v-for="item in splicingId" :key="item">
+              {{ item }}
+            </a-select-option>
+          </a-select>
+        </a-form-model-item>
+      </div>
+      <a-form-model-item
+        label="标签"
+        :style="`margin-bottom:${formChild.createIndex ? '0px' : '24px'}`"
+      >
+        <a-select
+          mode="tags"
+          placeholder="请输入标签"
+          style="width: 100%"
+          :filter-option="true"
+          @search="searchLabel"
+          @change="handelChange"
+          v-model="formChild.classificationNames"
+          :token-separators="[',', '，']"
+          @select="handelSelect"
+          :not-found-content="labelist.length ? undefined : null"
+          option-label-prop="value"
+        >
+          <a-select-option
+            v-for="(i, index) in labelist"
+            :key="i.name"
+            :value="i.name"
+            :label="index"
+          >
+            <a-icon type="exclamation-circle" :aria-label="index" />
+            {{ i.name }}
+          </a-select-option>
+        </a-select>
+      </a-form-model-item>
+      <a-form-model-item
+        label="描述"
+        :style="`margin-bottom:${formChild.createIndex ? '0px' : '24px'}`"
+      >
+        <a-textarea
+          v-model="formChild.description"
+          :maxLength="255"
+          placeholder="请输入描述"
+          rows="5"
+        ></a-textarea>
+      </a-form-model-item>
+    </a-form-model>
+  </div>
+</template>
+
+<script>
+import pinyin from "js-pinyin";
+function validateName(rule, value, callback) {
+  const reg = new RegExp("^[0-9a-zA-Z_-]+$");
+  if (value == "" || value == undefined || value == null) {
+    callback(new Error("必填字符不可为空"));
+  } else {
+    if (reg.test(value)) {
+      callback();
+    } else {
+      callback(new Error("仅可输入数字字母下划线和中线"));
+    }
+  }
+}
+
+function validateSpecialFont(rule, value, callback) {
+  const reg = new RegExp("^[\u4E00-\u9FA5][\u4E00-\u9FA50-9]*$");
+  if (value == "" || value == undefined || value == null) {
+    callback(new Error("必填"));
+  } else {
+    if (!reg.test(value)) {
+      callback(new Error("请输入中文或中文加数字"));
+    } else {
+      callback();
+    }
+  }
+}
+export default {
+  props: ["isEdit", "isHive", "notEditable"],
+  name: "Form",
+  data() {
+    const checkRepeat = (rule, value, callback) => {
+      this.$http("/zuul/lmanage/dataEntity/name/isExist?name=" + this.formChild.name).then(res => {
+        console.log(res.data.data.isExit);
+        if (res.data.data.isExit && !this.isEdit) {
+          callback(new Error("名称重复,请重新输入"));
+        } else {
+          callback();
+        }
+      });
+    };
+    return {
+      formChild: {
+        name: "",
+        aliases: "",
+        classificationNames: [],
+        description: "",
+        createIndex: false,
+        esColumns: []
+      },
+      inputPre: "",
+      ruleValidate: {
+        name: [
+          { required: true, message: "必填", trigger: "change" },
+          { validator: validateName, trigger: "change" },
+          { validator: checkRepeat, trigger: "change" }
+        ],
+        aliases: [
+          { required: true, message: "必填", trigger: "change" },
+          { validator: validateSpecialFont, trigger: "change" }
+        ]
+      },
+      indexList: [],
+      accurateValue: [],
+      blurryValue: [],
+      splicingId: [],
+      idValue: [],
+      idShow: [],
+      id: "",
+      labelist: [],
+      inputSelf: false
+    };
+  },
+  methods: {
+    onChange(value) {
+      // console.log(value);
+      this.formChild.createIndex = value;
+      console.log(value);
+      console.log(this.formChild.createIndex);
+      if (!value) {
+        this.accurateValue.forEach(item => {
+          this.indexList.push(item);
+        });
+        this.blurryValue.forEach(item => {
+          this.indexList.push(item);
+        });
+        this.accurateValue = [];
+        this.blurryValue = [];
+        this.idValue = [];
+        this.idShow = [];
+        console.log(this.indexList);
+      }
+      this.$emit("createIndexF", value);
+    },
+    selectIndex(value) {
+      let index = this.indexList.findIndex(item => {
+        return item == value;
+      });
+      this.indexList.splice(index, 1);
+    },
+    deselectAcc(value) {
+      this.indexList.push(value);
+      let index = this.accurateValue.findIndex(item => {
+        return item == value;
+      });
+      this.accurateValue.splice(index, 1);
+      console.log("精确", this.accurateValue);
+    },
+    deselectBlu(value) {
+      this.indexList.push(value);
+      let index = this.blurryValue.findIndex(item => {
+        return item == value;
+      });
+      this.blurryValue.splice(index, 1);
+      console.log("模糊", this.blurryValue);
+    },
+    selectForId(value) {
+      console.log(this.idValue);
+      this.idShow.push(`{${value}}`);
+    },
+    deselectForId(value) {
+      let index = this.idValue.findIndex(item => {
+        return item == value;
+      });
+      this.idValue.splice(index, 1);
+      console.log(this.idValue);
+      this.idShow.splice(index, 1);
+    },
+    getLabelist() {
+      this.$http.get("/zuul/lmanage/label/dict").then(res => {
+        console.log("标签", res.data.data);
+        this.labelist = res.data.data;
+      });
+    },
+    searchLabel(value) {
+      if (value == "") {
+        this.labelist = [];
+      } else {
+        this.labelist = [];
+        this.getLabelist();
+        this.labelist = this.labelist.filter(item => {
+          return item.name.match(value);
+        });
+        console.log(this.labelist);
+      }
+    },
+    handelChange(value) {
+      // console.log(value);
+    },
+    handelSelect(value) {
+      // console.log(value);
+    },
+    aliasesChange() {
+      if (!this.isEdit && !this.inputSelf) {
+        this.formChild.name = this.inputPre;
+      }
+      if (!this.isEdit && !this.inputSelf) {
+        this.formChild.name = this.inputPre + pinyin.getCamelChars(this.formChild.aliases);
+        console.log(this.formChild.name);
+        console.log(this.inputPre);
+        this.$refs.formModel.validateField('name');
+      }
+      // console.log(123);
+    },
+    nameChange(value) {
+      console.log(value);
+      if (this.formChild.name != this.inputPre) {
+        this.inputSelf = true;
+        console.log(this.inputSelf);       
+      }else{
+        this.inputSelf=false;
+        console.log(this.inputSelf);
+      }
+    }
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    }
+  },
+  mounted() {
+    this.getLabelist();
+  }
+};
+</script>
+
+<style lang="less">
+// .Form .ant-row.ant-form-item {
+//   margin-bottom: 0px;
+// }
+.selectIndex {
+  width: 100%;
+  border: 2px dashed #e8e8e8;
+  padding: 5px;
+  margin-bottom: 3px;
+}
+</style>

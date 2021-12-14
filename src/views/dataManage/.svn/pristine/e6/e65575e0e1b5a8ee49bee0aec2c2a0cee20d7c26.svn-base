@@ -1,0 +1,503 @@
+<template>
+  <div class="catalog">
+    <p class="title ">
+      <span>目录</span>
+      <span>Catalog</span>
+    </p>
+      <div style="margin:0 auto;width:1400px;height:100%">
+        <a-table
+          :columns="columns"
+          :data-source="data"
+          rowKey="id"
+          :pagination="false"
+          :loading="loading"
+          class="catalogTable"
+        >
+          <template slot="name" slot-scope="text, record, index">
+            <a-icon
+              v-show="record.parentId == '1'"
+              :type="
+                index == 0
+                  ? 'flag'
+                  : index == 1
+                  ? 'share-alt'
+                  : index == 2
+                  ? 'appstore'
+                  : index == 3
+                  ? 'database'
+                  : 'safety'
+              "
+              class="alt"
+              style="margin-right:6px"
+            />
+            <span style="font-size:16px">{{ text }}</span>
+          </template>
+          <template slot="action" slot-scope="row, record">
+            <a-button
+              style="margin-right:5px"
+              type="primary"
+              icon="plus"
+              size="small"
+              @click="add(row)"
+              >下级</a-button
+            >
+            <a-button
+              type="primary"
+              icon="edit"
+              size="small"
+              style="margin-right:5px"
+              @click="edit(row)"
+              v-show="row.parentId != 1"
+              >修改</a-button
+            >
+            <a-button
+              type="danger"
+              icon="delete"
+              size="small"
+              style="margin-right:5px"
+              @click="del(row, record)"
+              v-show="row.parentId != 1"
+              :loading="record.deloading"
+              >删除</a-button
+            >
+          </template>
+        </a-table>
+      </div>
+    <a-drawer
+      :visible="formVisible"
+      :maskClosable="true"
+      width="500px"
+      @close="onClose"
+      :title="drawerTitle"
+      :model="formData"
+    >
+      <a-form-model layout="vertical" :rules="ruleValidate" ref="formModel" :model="formData">
+        <a-form-model-item label="目录名称" prop="name">
+          <a-input
+            placeholder="请输入中文目录"
+            @change="catalogNameChange"
+            v-model="formData.name"
+          ></a-input>
+        </a-form-model-item>
+        <a-form-model-item label="英文缩写">
+          <a-input
+            v-model="formData.nameEn"
+            placeholder="输入中文目录,自动生成英文缩写"
+            :disabled="true"
+          ></a-input>
+        </a-form-model-item>
+        <a-form-model-item label="部门名称">
+          <a-input v-model="formData.officeName" placeholder="请输入部门名称"></a-input>
+        </a-form-model-item>
+        <a-form-model-item label="责任人">
+          <a-input v-model="formData.master" placeholder="请输入责任人"></a-input>
+        </a-form-model-item>
+        <a-form-model-item label="排序">
+          <a-input-number v-model="formData.sort" :min="1" :max="10" style="width:100%">
+          </a-input-number>
+        </a-form-model-item>
+        <a-form-model-item label="上级目录" v-show="formData.id">
+          <a-cascader
+            :options="catalogList"
+            v-model="catalogId"
+            placeholder="请选择所属目录"
+            change-on-select
+          />
+        </a-form-model-item>
+      </a-form-model>
+      <div class="les-drawer-form-footer">
+        <a-button type="danger" @click="onClose">关闭</a-button>
+        <a-button type="primary" @click="save" :loading="saveLoading">保存</a-button>
+      </div>
+    </a-drawer>
+  </div>
+</template>
+<script>
+import pinyin from "js-pinyin";
+
+const columns = [
+  {
+    title: "目录",
+    dataIndex: "name",
+    width: 200,
+    scopedSlots: { customRender: "name" }
+  },
+  {
+    title: "英文缩写",
+    dataIndex: "nameEn"
+  },
+  {
+    title: "所属部门",
+    dataIndex: "officeName"
+  },
+  {
+    title: "责任人",
+    dataIndex: "master"
+  },
+  {
+    title: "操作",
+    key: "action",
+    width: 260,
+    scopedSlots: { customRender: "action" },
+    align: "center"
+  }
+];
+export default {
+  name: "catalog",
+  data() {
+    return {
+      data: [],
+      columns,
+      expandedRowKeys: [],
+      formVisible: false,
+      drawerTitle: "新增下级目录",
+      formData: {
+        name: "",
+        nameEn: "",
+        master: "",
+        id: "",
+        type: null,
+        sort: 0,
+        parentIdsList: [],
+        parentId: "",
+        parentId: "",
+        officeName: ""
+      },
+      ruleValidate: {
+        name: [{ required: true, message: "必填", trigger: "change" }]
+      },
+      catalogList: [],
+      catalogId: [],
+      // row: {},
+      loading: false,
+      saveLoading: false
+    };
+  },
+  methods: {
+    add(row) {
+      this.drawerTitle = "新增下级目录";
+      this.formData = {
+        name: "",
+        nameEn: "",
+        master: "",
+        id: "",
+        type: null,
+        sort: 0,
+        parentIdsList: [],
+        parentId: "",
+        parentIds: "",
+        officeName: "",
+        sort: 0
+      };
+      this.catalogId = [];
+      this.formVisible = true;
+      console.log(row);
+      // this.row = row;
+      // row.parentIdsList = [];
+      row.parentIdsList.push(row.id);
+      row.parentIdsList = [...new Set(row.parentIdsList)];
+      this.formData.parentIdsList = row.parentIdsList;
+      // this.formData.parentIdsList.push(row.id);
+      this.formData.parentId = row.id;
+      this.formData.type=row.type
+      this.formData.parentIds = this.formData.parentIdsList.join(",");
+      console.log(this.formData);
+    },
+    onClose() {
+      this.formVisible = false;
+    },
+    catalogNameChange() {
+      this.formData.nameEn = pinyin.getCamelChars(this.formData.name);
+    },
+    renderTable() {
+      this.loading = true;
+      this.$http.get("/zuul/lmanage/asset/catalog/tree").then(res => {
+        console.log(res);
+        this.data = res.data.data;
+        console.log(this.data);
+        this.loading = false;
+      });
+    },
+    onExpand(expand, row) {
+      if (expand) {
+        console.log(row);
+        this.getChildren(row);
+        this.expandedRowKeys.push(row.id);
+        console.log(this.data);
+      } else {
+        // this.expandedRowKeys = this.expandedRowKeys.filter(item => {
+        //   return item != row.id;
+        // });
+        // this.closeNode(row);
+        if (row.children.length > 0) {
+          let index1 = this.expandedRowKeys.indexOf(row.id);
+          if (index1 != -1) {
+            this.expandedRowKeys.splice(index1, 1);
+          }
+          let a = this.getNodeId(row.children);
+          console.log(a);
+          a.forEach(item1 => {
+            let index = this.expandedRowKeys.indexOf(item1);
+            if (index != -1) {
+              this.expandedRowKeys.splice(index, 1);
+            }
+          });
+        }
+      }
+      console.log(this.expandedRowKeys);
+    },
+    save() {
+      this.saveLoading = true;
+      if (this.catalogId.length > 0) {
+        this.formData.parentIds = this.catalogId.join(",");
+        this.formData.parentId = this.catalogId[this.catalogId.length - 1];
+      }
+      console.log(this.formData);
+      this.$http({
+        method: "post",
+        url: "/zuul/lmanage/asset/catalog/save",
+        data: this.formData
+      }).then(res => {
+        if (res.data.success) {
+          this.$notification.success({
+            message: "操作成功",
+            duration: 2
+          });
+          this.renderTable();
+          // this.getCatalogList();
+          // this.$set(this.data[0].children, this.data[0].children.length - 1, res.data.data);
+          // if (this.formData.id == "") {
+          //   if (!this.row.children) {
+          //     this.row.children = [];
+          //   }
+          //   this.getChildren(this.row);
+          //   let index = this.expandedRowKeys.findIndex(item => {
+          //     item == this.row.id;
+          //   });
+          //   if (index == -1) {
+          //     this.expandedRowKeys.push(this.row.id);
+          //   }
+          //   let a = this.getNodeId(this.row.children);
+          //   console.log(a);
+          //   a.forEach(item1 => {
+          //     let index = this.expandedRowKeys.indexOf(item1);
+          //     if (index != -1) {
+          //       this.expandedRowKeys.splice(index, 1);
+          //     }
+          //   });
+          //   this.data = [...this.data];
+          // } else {
+          //   if (this.catalogFlag) {
+          //     this.renderTable();
+          //     // this.expandedRowKeys = [];
+          //   } else {
+          //     this.$set(this.row, "officeName", this.formData.officeName);
+          //     this.$set(this.row, "enName", this.formData.enName);
+          //     this.$set(this.row, "name", this.formData.name);
+          //     this.$set(this.row, "master", this.formData.master);
+          //     this.data = [...this.data];
+          //   }
+          // }
+          console.log(res);
+          console.log(this.data);
+          // this.expandedRowKeys = [];
+          this.formVisible = false;
+          this.saveLoading = false;
+        } else {
+          this.$notification.error({
+            message: "操作失败",
+            duration: 2
+          });
+          this.saveLoading = false;
+        }
+      });
+    },
+    del(row, record) {
+      this.$set(record, "deloading", true);
+      this.$http.get("/zuul/lmanage/asset/catalog/isUsed?catalogId=" + row.id).then(res => {
+        console.log(res);
+        if (res.data.data.isUsed) {
+          this.$message.error("此目录已被使用,无法删除");
+          this.$set(record, "deloading", false);
+        } else {
+          this.$set(record, "deloading", false);
+          this.$confirm({
+            title: "信息提示",
+            content: "确认删除?",
+            okType: "danger",
+            onOk: () => {
+              this.$set(record, "deloading", true);
+              this.$http({
+                method: "delete",
+                url: "/zuul/lmanage/asset/catalog/" + row.id + "?parentId=" + row.parentId
+              }).then(res => {
+                if (res.data.success) {
+                  this.$notification.success({
+                    message: "删除成功",
+                    duration: 2
+                  });
+                  // this.data = this.nodeFilter(this.data, row.id);
+                  // this.data = [...this.data];
+                  // this.data = this.removeChildren(this.data, row);
+                  this.renderTable();
+                  // this.expandedRowKeys = [];
+                  console.log(this.data);
+                  this.$set(record, "deloading", false);
+                } else {
+                  this.$notification.success({
+                    message: "删除失败",
+                    duration: 2
+                  });
+                  this.$set(record, "deloading", false);
+                }
+              });
+            }
+          });
+        }
+      });
+    },
+    edit(row) {
+      this.drawerTitle = "修改目录";
+      console.log(row);
+      this.getCatalogList();
+      // this.row = row;
+      this.formVisible = true;
+      this.$http.get("/zuul/lmanage/asset/catalog/" + row.id).then(res => {
+        this.formData = res.data.data;
+        console.log(res.data.data);
+      });
+    },
+    // getChildren(row) {
+    //   this.$http.get("/zuul/lmanage/asset/catalog?parentId=" + row.id).then(res => {
+    //     row.children = res.data.data;
+    //     this.data = [...this.data];
+    //     console.log(this.data);
+    //     console.log(res.data.data);
+    //   });
+    // },
+    // expandedRowsChange(expandedRowKeys) {
+    //   console.log(expandedRowKeys);
+    //   // console.log(this.expandedRowKeys);
+    // },
+    //获取关闭当前节点下的所有子节点
+    // getNodeId(list, newNodeId = []) {
+    //   for (let i in list) {
+    //     newNodeId.push(list[i].id);
+    //     if (list[i].children) {
+    //       this.getNodeId(list[i].children, newNodeId);
+    //     }
+    //   }
+    //   return newNodeId;
+    // },
+    getCatalogList() {
+      this.$http.get("/zuul/lmanage/asset/parent/cascader").then(res => {
+        this.catalogList = res.data.data;
+      });
+    }
+    //过滤掉要删除的那个节点(删除节点的方法)
+    // nodeFilter(data, id) {
+    //   var newData = data.filter(x => x.id !== id);
+    //   newData.forEach(x => x.children && (x.children = this.nodeFilter(x.children, id)));
+    //   return newData;
+    // },
+    //删除节点后会残留空children 此递归方法为去除数组中的空children
+    // removeChildren(arr, row) {
+    //   if (arr.length) {
+    //     for (let i in arr) {
+    //       if (arr[i].children && arr[i].children.length > 0) {
+    //         this.removeChildren(arr[i].children);
+    //       } else {
+    //         delete arr[i].children;
+    //         // break;
+    //       }
+    //     }
+    //   }
+    //   return arr;
+    // },
+    // getParentId(list, id) {
+    //   for (let i in list) {
+    //     if (list[i].id == id) {
+    //       return [list[i]];
+    //     }
+    //     if (list[i].children) {
+    //       let node = this.getParentId(list[i].children, id);
+    //       if (node !== undefined) {
+    //         return node.concat(list[i]);
+    //       }
+    //     }
+    //   }
+    // }
+  },
+  mounted() {
+    this.renderTable();
+    this.getCatalogList();
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    }
+  }
+};
+</script>
+<style scoped lang="less">
+.les-table-toolbar {
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+}
+.title {
+  font-weight: bolder;
+  margin-bottom: 20px;
+  text-align: center;
+  @font-face {
+    font-family: "PMZD";
+    src: url("./assets/font/PangMenZhengDaoBiaoTiTi-1.ttf");
+  }
+  position: relative;
+  font-family: "PMZD";
+  span:first-child {
+    font-size: 40px;
+    color: rgba(22, 137, 255, 0.8);
+    position: absolute;
+    left: 48%;
+    top: 35px;
+  }
+  span:last-child {
+    font-size: 56px;
+    color: #e6effd;
+  }
+}
+/deep/.catalogTable .ant-table table {
+  border: 1px solid #e8e8e8;
+  border-left: none;
+  border-radius: 15px;
+  box-shadow: 0px 0px 10px 10px #e8e8e8;
+  .ant-table-thead > tr:first-child > th:last-child {
+    border-top-right-radius: 15px;
+  }
+  .ant-table-thead > tr:first-child > th:first-child {
+    border-top-left-radius: 15px;
+  }
+  .ant-table-tbody > tr:last-child > td {
+    border: none;
+    border-top: 1px solid #e8e8e8;
+    font-size: 16px;
+  }
+  .ant-table-tbody > tr > td:not(:first-child),
+  .ant-table-thead > tr > th:not(:first-child) {
+    text-align: center;
+  }
+  .ant-table-tbody > tr:not(last-child) > td {
+    border: 1px solid #e8e8e8;
+    border-bottom: 1px solid #e8e8e8;
+    box-shadow: 0px 10px 10px 0px #e8e8e8;
+    border-radius: 15px;
+    font-size: 16px;
+  }
+  .anticon.alt svg {
+    color: #0aa1ed;
+    width: 16px;
+    height: 16px;
+  }
+}
+</style>

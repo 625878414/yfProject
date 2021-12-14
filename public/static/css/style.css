@@ -1,0 +1,217 @@
+html,body{
+    overflow: hidden;
+    padding: 0 !important;
+    color: var(--main-text-color);
+    font-family: PingFang SC;
+}
+@font-face {
+    font-family: "PingFang SC";
+    src: url('../font/PingFang.otf');
+    font-weight:bold;
+}
+.relative{
+    position: relative;
+}
+.loading-shadow{
+    background: rgba(123, 123, 123, 0.2);
+    z-index: 9999;
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    top: 0;
+    left: 0;
+}
+.loading-source{
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    margin-top: -60px;
+    margin-left: -40px;
+}
+.loading-dot{
+    position: relative;
+    width: 50px;
+    height: 50px;
+    display: block;
+    margin-left: 20px;
+    margin-bottom: 20px;
+    transform: rotate(0deg);
+    animation: loadingRotate 1s infinite linear;
+}
+@keyframes loadingRotate{
+    to { transform: rotate(450deg);}
+}
+@-webkit-keyframes loadingRotate /*Safari and Chrome*/
+{
+    to { transform: rotate(405deg);}
+}
+.loading-dot i{
+    position: absolute;
+    width: 20px;
+    height: 20px;
+    background-color: #0a83ff;
+    display: inline-block;
+    opacity: .3;
+    animation: loadingOpacity .4s infinite linear alternate;
+    -webkit-animation:loadingOpacity .4s infinite linear alternate; /* Safari 和 Chrome */
+}
+@keyframes loadingOpacity{
+    to { opacity:1}
+}
+
+@-webkit-keyframes loadingOpacity /*Safari and Chrome*/
+{
+    to { opacity:1}
+}
+.loading-dot i:nth-child(1){
+    top: 0;
+    left: 0;
+    border-radius: 100%;
+}
+.loading-dot i:nth-child(2){
+    top: 0;
+    right: 0;
+    border-radius: 100%;
+    animation-delay: .4s;
+}
+.loading-dot i:nth-child(3){
+    bottom: 0;
+    left: 0;
+    border-radius: 100%;
+    animation-delay: .8s;
+}
+.loading-dot i:nth-child(4){
+    bottom: 0;
+    right: 0;
+    border-radius: 100%;
+    animation-delay: 1.2s;
+}
+.loading-text i{
+    display: inline-block;
+    width: 4px;
+    height: 4px;
+    background-color: #0a83ff;
+    margin-left: 6px;
+    border-radius: 100%;
+    opacity: .3;
+    animation: loadingTextOpacity .4s infinite linear alternate;
+    -webkit-animation:loadingTextOpacity .4s infinite linear alternate; /* Safari 和 Chrome */
+}
+@keyframes loadingTextOpacity{
+  to{
+      opacity: 1;
+  }
+}
+@-webkit-keyframes loadingTextOpacity{
+    to{
+        opacity: 1;
+    }
+}
+.loading-text i:nth-child(2){
+    animation-delay: 0.3s;
+}
+.loading-text i:nth-child(3){
+    animation-delay: 0.6s;
+}
+.flex{
+    display: flex;
+}
+.les-table-toolbar{
+    padding: 10px;
+    display: flex;
+    justify-content: space-between;
+}
+.les-card{
+    background: #f0f2f5;
+}
+.les-card,.les-card-padding{
+
+}
+.les-card .les-card-header{
+   height: 54px;
+   line-height: 54px;
+   padding-left: 10px;
+   font-size: 16px;
+   border-bottom: 1px solid #e8e8e8;
+}
+.les-card .les-card-header i{
+    font-size: 20px;
+    margin-right: 2px;
+}
+.les-drawer-form{
+    position: relative;
+    padding-bottom: 30px;
+}
+.les-drawer-form-footer{
+    position: fixed;
+    bottom: 0;
+    height: 60px;
+    line-height: 60px;
+    z-index: 1;
+    margin-left: -24px;
+    width: 480px;
+    text-align: right;
+}
+.les-drawer-form-footer button{
+    margin: 0 4px;
+}
+:root {
+    --main-bg-color: #13285b;
+    --main-bg-dark:#263858;
+    --main-main-text-color: #fff;
+}
+#lmodals-container  .vm--overlay{
+    display: none;
+}
+#lmodals-container .vm--container{
+    width: 0;
+}
+
+.searchBar {
+    margin: -10px -10px 10px -10px;
+    padding: 10px;
+    background-color: white;
+    box-shadow: 0 0 1px 0 rgba(0, 0, 0, .3);
+}
+.toolbar {
+    margin-bottom: 10px;
+}
+.page-header-title {
+    color: #17233d;
+    font-weight: 500;
+    font-size: 20px;
+}
+.page-content-body {
+    padding: 10px;
+    background-color: #f0f2f5;
+}
+#app-content{
+    background-color: #fff;
+}
+.page-table-frame{
+    border: 1px solid #eee;
+    background-color: white;
+}
+.page-table-pager{
+    margin: 10px;
+    text-align: right;
+}
+.page-drawer-footer{
+    width: 100%;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    border-top: 1px solid #e8e8e8;
+    padding: 10px 16px;
+    text-align: right;
+    background: #fff;
+}
+
+
+
+.main-menu .ant-menu-inline-collapsed > .ant-menu-item,
+.main-menu .ant-menu-inline-collapsed > .ant-menu-item-group > .ant-menu-item-group-list > .ant-menu-item,
+.main-menu .ant-menu-inline-collapsed > .ant-menu-item-group > .ant-menu-item-group-list > .ant-menu-submenu > .ant-menu-submenu-title,
+.main-menu .ant-menu-inline-collapsed > .ant-menu-submenu > .ant-menu-submenu-title {
+  padding: 0 20px !important;
+}

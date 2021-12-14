@@ -1,0 +1,439 @@
+<template>
+  <div class="labelCloud" :style="'height:' + bodyHeight + 'px'">
+    <div class="layout">
+      <!-- 词云部分 -->
+      <a-spin :spinning="loading" size="large">
+        <div class="spin-content">
+          <div id="chart" :style="`width:1268px;height:830px;`"></div>
+        </div>
+      </a-spin>
+      <!-- 词云搜索以及下载为图片 -->
+      <div class="search">
+        <h1>标签云</h1>
+        <h1>Tag Cloud</h1>
+        <a-input-number
+          style="margin-right:10px;width:240px"
+          v-model="labelCount"
+          :max="100"
+          step="10"
+          placeholder="请输入需要查询的标签数量"
+          size="large"
+        ></a-input-number>
+        <br />
+        <a-button type="primary" @click="handleSearch" style="margin:20px 0px;width:100px"
+          >查询</a-button
+        >
+        <div class="download">
+          <a-icon type="download" style="margin-right:10px" /><span>下 载 标 签 云 图 片</span
+          ><br />
+          <a-button type="primary" style="margin:20px 0px;width:100px"
+            ><a :href="url" download="tagCloud.png">下载</a></a-button
+          >
+        </div>
+      </div>
+    </div>
+    <!-- 抽屉 -->
+    <a-modal
+      v-model="modalVisible"
+      :title="modalTitle"
+      :footer="null"
+      :width="'80%'"
+      style="height:500px"
+    >
+      <div
+        :style="{
+          overflow: 'hidden',
+          position: 'relative'
+        }"
+      >
+        <a-spin :spinning="spinning">
+          <a-table
+            :data-source="tableData"
+            :columns="columns"
+            rowKey="name"
+            @expand="onExpand"
+            :expandedRowKeys="expandedRowKeys"
+            size="small"
+            :pagination="false"
+          >
+            <a-table
+              :data-source="childTableData"
+              :columns="childColumns"
+              slot="expandedRowRender"
+              rowKey="assetId"
+              size="small"
+              class="childTable"
+              :pagination="pagination"
+              @change="handleTableChange"
+            >
+              <template slot="action" slot-scope="row">
+                <a-button type="primary" @click="getDetails(row)">详情</a-button>
+              </template>
+            </a-table>
+          </a-table>
+        </a-spin>
+
+        <a-drawer
+          title="详情"
+          placement="right"
+          :visible="drawerVisible"
+          :get-container="false"
+          :wrap-style="{ position: 'absolute' }"
+          @close="onDrawerClose"
+          :width="400"
+        >
+          <a-spin :spinning="detailSpin">
+            <a-descriptions title="元数据详情" bordered :column="1" size="small">
+              <a-descriptions-item label="名称">
+                {{ details.name }}
+              </a-descriptions-item>
+              <a-descriptions-item label="ID">
+                {{ details.id }}
+              </a-descriptions-item>
+              <a-descriptions-item label="描述">
+                {{ details.description ? details.description : "无" }}
+              </a-descriptions-item>
+              <a-descriptions-item label="数据源ID">
+                {{ details.dataSourceId }}
+              </a-descriptions-item>
+              <a-descriptions-item label="数据源文件">
+                {{ details.dataSourceFile }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </a-spin>
+        </a-drawer>
+      </div>
+    </a-modal>
+  </div>
+</template>
+
+<script>
+import * as echarts from "echarts";
+import "echarts-wordcloud/dist/echarts-wordcloud.min";
+export default {
+  name: "labelCloud",
+  data() {
+    return {
+      chart: null,
+      data: [],
+      modalVisible: false,
+      columns: [
+        {
+          title: "序号",
+          customRender: (text, record, index) => index + 1
+        },
+        {
+          dataIndex: "name",
+          title: "资产类型"
+        },
+        {
+          dataIndex: "count",
+          title: "使用次数",
+          customRender: text => text + "次"
+        }
+      ],
+      tableData: [],
+      childColumns: [
+        {
+          dataIndex: "assetName",
+          title: "名称"
+        },
+        {
+          dataIndex: "labelName",
+          title: "标签名"
+        },
+        {
+          dataIndex: "useTime",
+          title: "使用时间"
+        },
+        ,
+        {
+          title: "操作",
+          scopedSlots: { customRender: "action" }
+        }
+      ],
+      childTableData: [],
+      drawerVisible: false,
+      expandedRowKeys: [],
+      modalTitle: "",
+      labelCount: undefined,
+      pagination: {
+        current: 1,
+        pageSize: 5,
+        showTotal: total => `共${total}条`,
+        total: 0,
+        defaultPageSize: 5
+      },
+      searchConditions: {
+        name: "",
+        assetType: "",
+        size: 5,
+        page: 0
+      },
+      spinning: false,
+      assetType: "",
+      details: {},
+      detailSpin: false,
+      url: "",
+      loading: false
+    };
+  },
+  methods: {
+    //使用echarts绘制词云
+    initChart() {
+      this.loading = true;
+      this.$http
+        .get(`/zuul/lmanage/label/map?topN=${this.labelCount == undefined ? 50 : this.labelCount}`)
+        .then(res => {
+          this.chart = echarts.init(document.getElementById("chart"));
+          if (res.data.success) {
+            this.data = res.data.data;
+            console.log(res.data.data);
+          } else {
+            this.loading = false;
+          }
+          var img = new Image();
+          img.src = require("./assets/image/bg1.png");
+          const option = {
+            backgroundColor: {
+              image: img
+            },
+            // backgroundColor:"#fff",
+            tooltip: {
+              show: true
+            },
+            // toolbox: {
+            //   feature: {
+            //     saveAsImage: {
+            //       title: "保存为图片"
+            //     }
+            //   },
+            //   right: "140",
+            //   top: "60"
+            // },
+            series: [
+              {
+                name: "标签地图",
+                type: "wordCloud",
+                // shape: 'diamond',
+                // size: ['9%', '99%'],
+                // 字号区间
+                sizeRange: [25, 80],
+                //调整字体间的距离
+                gridSize: 20,
+                //textRotation: [0, 45, 90, -45],
+                rotationRange: [-45, 90],
+                //shape: 'circle',
+                textPadding: 0,
+                // radius: ["98%", "97%"],
+                autoSize: {
+                  enable: true,
+                  minSize: 30
+                },
+                textStyle: {
+                  // 随即色
+                  // color: () => {
+                  //   return (
+                  //     "rgb(" +
+                  //     [
+                  //       Math.round(Math.random() * 160),
+                  //       Math.round(Math.random() * 160),
+                  //       Math.round(Math.random() * 160)
+                  //     ].join(",") +
+                  //     ")"
+                  //   );
+                  // },
+                  color: "#fff"
+                },
+                emphasis: {
+                  focus: "self",
+                  textStyle: {
+                    shadowBlur: 6,
+                    shadowColor: "#333"
+                  }
+                },
+                data: this.data
+                // data: [
+                //   { name: "南京", value: "1" },
+                //   { name: "上海", value: "2" },
+                //   { name: "沈阳", value: "3" },
+                //   { name: "广州", value: "4" },
+                //   { name: "北京", value: "5" },
+                //   { name: "成都", value: "6" }
+                // ]
+              }
+            ]
+          };
+          // this.chart.clear()
+          this.chart.setOption(option);
+          this.loading = false;
+          setTimeout(() => {
+            this.url = this.chart.getDataURL({
+              pixelRatio: 1,
+              background: require("./assets/image/bg1.png"),
+              backgroundColor: "#fff"
+            });
+          }, 300);
+          // 点击事件
+          this.chart.off('click')
+          this.chart.on("click", params => {
+            //点击某条标签 打开标签对应的信息
+            this.pagination.current = 1;
+            this.searchConditions.page = 0;
+            this.spinning = true;
+            this.modalVisible = true;
+            this.drawerVisible = false;
+            // console.log(params);
+            this.modalTitle = params.data.name;
+            this.$http
+              .get(`/zuul/lmanage/label/assetType/count?name=${params.data.name}`)
+              .then(res => {
+                console.log(res);
+                if (res.data.success) {
+                  this.tableData = res.data.data;
+                  this.expandedRowKeys.push(this.tableData[0].name);
+                  this.searchConditions.name = params.data.name;
+                  this.searchConditions.assetType = this.tableData[0].assetType;
+                  this.renderChildTable();
+                } else {
+                  this.spinning = false;
+                }
+              });
+          });
+        });
+    },
+    //展开子项
+    onExpand(expanded, record) {
+      console.log(record);
+      this.assetType = record.assetType;
+      this.expandedRowKeys = [];
+      if (expanded) {
+        this.expandedRowKeys.push(record.name);
+        //发请求 获取子表格数据   此场景只支持展开一个表格
+        this.searchConditions.assetType = record.assetType;
+        this.renderChildTable();
+      }
+    },
+    onDrawerClose() {
+      console.log(123);
+      this.drawerVisible = false;
+    },
+    //获取每条元数据的详情
+    getDetails(row) {
+      this.drawerVisible = true;
+      this.detailSpin = true;
+      console.log(row);
+      this.$http
+        .get(`/zuul/lmanage/label/asset/detail?assetId=${row.assetId}&assetType=${row.assetType}`)
+        .then(res => {
+          console.log(res);
+          this.details = res.data.data;
+          this.detailSpin = false;
+        });
+    },
+    //查询指定数量的标签
+    handleSearch() {
+      console.log(this.labelCount);
+      this.initChart();
+    },
+    //标签表格页码切换
+    handleTableChange(pagination) {
+      console.log(pagination);
+      this.pagination.current = pagination.current;
+      this.searchConditions.page = pagination.current - 1;
+      console.log(this.searchConditions.page);
+      this.renderChildTable();
+    },
+    renderChildTable() {
+      this.spinning = true;
+      this.$http({
+        url: "/zuul/lmanage/label/asset/page",
+        method: "get",
+        params: {
+          page: this.searchConditions.page,
+          size: 5,
+          name: this.searchConditions.name,
+          assetType: this.searchConditions.assetType
+        }
+      }).then(res => {
+        if (res.data.success) {
+          console.log(res.data.data.results);
+          this.childTableData = res.data.data.results;
+          this.spinning = false;
+          this.pagination.total = res.data.data.total;
+        } else {
+          this.spinning = false;
+        }
+      });
+    }
+  },
+  mounted() {
+    this.initChart();
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    }
+  }
+};
+</script>
+
+<style scoped lang="less">
+/deep/ .childTable .ant-table-small {
+  border-top: none;
+}
+.search {
+  // position: absolute;
+  // top: 100px;
+  // right: 220px;
+  margin-right: 220px;
+  margin-top: 100px;
+  h1 {
+    @font-face {
+      font-family: "PMZD";
+      src: url("./assets/font/PangMenZhengDaoBiaoTiTi-1.ttf");
+    }
+    font-family: "PMZD";
+    font-size: 60px;
+    color: #1689ff;
+  }
+  h1:nth-child(2) {
+    margin-bottom: 60px;
+    font-size: 60px;
+    color: #d4e5ff;
+    width: 300px;
+  }
+}
+/deep/ .childTable.ant-table-wrapper {
+  height: 400px;
+}
+.labelCloud {
+  background-color: #f7f8fa;
+}
+#chart {
+  background-image: url("./assets/image/bg1.png");
+  background-repeat: no-repeat;
+  background-size: 100%;
+  margin-right: 6.25rem;
+}
+.layout {
+  display: flex;
+  // justify-content: space-between;
+  // position: relative;
+}
+/deep/ .download {
+  svg {
+    width: 22px;
+    height: 22px;
+    color: #5bbb9b;
+  }
+  span {
+    font-size: 20px;
+    color: #989ca8;
+  }
+}
+/deep/.layout .ant-spin-nested-loading > div > .ant-spin .ant-spin-dot {
+  top: 91%;
+  left: 45%;
+}
+</style>

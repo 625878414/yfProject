@@ -1,0 +1,602 @@
+<template>
+  <div class="source-index">
+    <div class="les-table-toolbar">
+      <a-button-group>
+        <a-button type="primary" icon="plus" @click="add">
+          新增
+        </a-button>
+      </a-button-group>
+      <div>
+        <a-input
+          v-model="searchConditions.name"
+          placeholder="名称"
+          :maxLength="10"
+          style="width: 150px;margin-right: 5px"
+          allowClear
+        >
+          <a-icon slot="suffix" type="search" />
+        </a-input>
+        <a-select
+          v-model="searchConditions.sourceType"
+          style="width:150px;margin-left:5px"
+          allowClear
+          placeholder="来源类型"
+        >
+          <a-select-option value="0">
+            bigData
+          </a-select-option>
+          <a-select-option value="1">
+            JDBC
+          </a-select-option>
+        </a-select>
+        <a-button type="primary" icon="search" style="margin-left:5px" @click="handleSearch"
+          >查询</a-button
+        >
+        <a-button type="danger" icon="close-circle" style="margin-left:5px" @click="handleReset"
+          >重置</a-button
+        >
+      </div>
+    </div>
+    <vue-scroll :style="'height:' + (bodyHeight - 60) + 'px;'">
+      <a-skeleton :loading="skeletonLoading" :paragraph="{ rows: 15 }">
+        <a-table
+          style="width: 100%"
+          :columns="columns"
+          :data-source="tableData"
+          rowKey="id"
+          :pagination="false"
+          size="small"
+          :rowClassName="rowClassName"
+          :loading="loading"
+        >
+          <template slot="action" slot-scope="row,record">
+            <a-button
+              style="margin-right:5px"
+              type="primary"
+              icon="edit"
+              size="small"
+              @click="edit(row)"
+              >修改</a-button
+            >
+            <a-button
+              type="danger"
+              icon="delete"
+              size="small"
+              @click="del(row.id,record)"
+              v-show="row.delAble"
+              :loading="record.deloading"
+              >删除</a-button
+            >
+          </template>
+        </a-table>
+      </a-skeleton>
+    </vue-scroll>
+    <a-pagination
+      :defaultPageSize="20"
+      style="text-align:right;margin:10px"
+      :showQuickJumper="this.total > 20"
+      :show-total="total => `共 ${total} 条`"
+      :total="total"
+      @change="pageChange"
+      :current="currentPage"
+    >
+    </a-pagination>
+    <div>
+      <a-drawer
+        class="les-drawer-form"
+        @close="onClose"
+        :maskClosable="true"
+        :title="drawerTitle"
+        :visible="drawerVisible"
+        width="500px"
+      >
+        <a-form-model :model="formData" layout="vertical" :rules="ruleValidate" ref="formModel">
+          <a-form-model-item label="名称" prop="name">
+            <a-input v-model="formData.name" placeholder="最多输入20个字符" :maxLength="20" />
+          </a-form-model-item>
+          <a-form-model-item label="来源" prop="sourceType">
+            <a-select
+              v-model="formData.sourceType"
+              placeholder="请选择来源"
+              :disabled="isEdit"
+              @change="typeChange"
+            >
+              <a-select-option value="0">
+                BigData
+              </a-select-option>
+              <a-select-option value="1">
+                JDBC
+              </a-select-option>
+            </a-select>
+          </a-form-model-item>
+          <a-form-model-item v-show="isJDBC" label="类型名称" prop="typeName">
+            <a-select
+              v-model="formData.typeName"
+              placeholder="请选择类型名称"
+              :disabled="!editAble"
+            >
+              <a-select-option v-for="typeName in typeNameList" :key="typeName" :value="typeName">
+                {{ typeName }}
+              </a-select-option>
+            </a-select>
+          </a-form-model-item>
+          <div style="margin-bottom:24px" v-show="formData.id">
+            <span v-html="'状态 :&nbsp;&nbsp;&nbsp;&nbsp;'">状态: &nbsp;&nbsp;&nbsp;&nbsp;</span>
+            <span>{{ formData.isAudit == "0" ? "未审核" : "已审核" }}</span>
+          </div>
+          <a-form-model-item label="用户名" prop="username">
+            <a-input
+              v-model="formData.username"
+              placeholder="最多输入20个字符"
+              :maxLength="20"
+              :disabled="!editAble"
+            />
+          </a-form-model-item>
+          <a-form-model-item label="密码" prop="password">
+            <a-input
+              v-model="formData.password"
+              placeholder="最多输入20个字符"
+              :maxLength="20"
+              :disabled="!editAble"
+            />
+          </a-form-model-item>
+          <div style="position: relative;">
+            <a-form-model-item label="驱动" v-if="isJDBC" prop="driverClassName">
+              <a-select
+                v-model="formData.driverClassName"
+                placeholder="请选择驱动"
+                :disabled="!editAble"
+              >
+                <a-select-option v-for="item in driverClassList" :value="item" :key="item">
+                  {{ item }}
+                </a-select-option>
+              </a-select>
+              <a-button class="btn_connect" size="small" type="primary" @click="testing"
+                >连接测试</a-button
+              >
+            </a-form-model-item>
+            <a-form-model-item label="认证方式" v-else prop="authMethod">
+              <a-select
+                v-model="formData.authMethod"
+                placeholder="请选择认证方式"
+                :disabled="!editAble"
+              >
+                <a-select-option v-for="auth in authList" :value="auth" :key="auth">{{
+                  auth
+                }}</a-select-option>
+              </a-select>
+            </a-form-model-item>
+          </div>
+          <a-form-model-item label="URL" prop="url">
+            <a-input
+              v-model="formData.url"
+              placeholder="jdbc:mysql://192.168.110.228:3306/"
+              v-if="
+                formData.driverClassName == 'com.mysql.cj.jdbc.Driver' && formData.sourceType == '1'
+              "
+              :disabled="!editAble"
+            />
+            <a-input
+              v-model="formData.url"
+              placeholder="jdbc:oracle:thin:@192.168.110.228:1524/xe"
+              v-else-if="
+                formData.driverClassName == 'oracle.jdbc.driver.OracleDriver' &&
+                  formData.sourceType == '1'
+              "
+              :disabled="!editAble"
+            />
+            <a-input
+              v-model="formData.url"
+              :placeholder="
+                formData.sourceType == '0' ? 'http://hdp2.les.com:21000/api/atlas/v2' : '请输入URL'
+              "
+              :disabled="!editAble"
+              v-else
+            />
+          </a-form-model-item>
+          <a-form-model-item label="描述">
+            <a-textarea
+              v-model="formData.description"
+              placeholder="请输入描述"
+              allowClear
+              :maxLength="255"
+              :rows="isJDBC ? '4' : '8'"
+            />
+          </a-form-model-item>
+          <p v-show="!editAble" class="prompt">提示:此数据源已被使用,只可修改名称及描述</p>
+        </a-form-model>
+        <div class="les-drawer-form-footer">
+          <a-button type="danger" @click="onClose">关闭</a-button>
+          <a-button type="primary" @click="save">保存</a-button>
+        </div>
+      </a-drawer>
+    </div>
+  </div>
+</template>
+
+<script>
+import { GetPageByDelete } from "../../libs/util";
+import { validateSpecialFont } from "../../libs/validate";
+export default {
+  name: "source-index",
+  data() {
+    return {
+      skeletonLoading: true,
+      columns: [
+        {
+          dataIndex: "index",
+          title: "序号",
+          align: "center",
+          width: 50,
+          customRender: (text, record, index) => index + 1
+        },
+        {
+          dataIndex: "name",
+          title: "名称",
+          align: "center"
+        },
+        {
+          dataIndex: "sourceType",
+          title: "来源",
+          align: "center",
+          customRender: text => (text == "0" ? "BigData" : "JDBC"),
+          width: 80
+        },
+        {
+          dataIndex: "typeName",
+          title: "类型",
+          align: "center",
+          customRender: text => (text == null ? "hive" : text)
+        },
+        {
+          title: "状态",
+          dataIndex: "isAudit",
+          align: "center",
+          // customRender: text => (text == "1" ? "已审核" : "未审核")
+          customRender: text => {
+            if (text == "1") {
+              return <a-tag color="green">已审核</a-tag>;
+            } else {
+              return <a-tag color="red">未审核</a-tag>;
+            }
+          }
+        },
+        {
+          title: "更新时间",
+          align: "center",
+          dataIndex: "updateTime",
+          width: 180
+        },
+        {
+          dataIndex: "description",
+          title: "描述",
+          align: "center",
+          customRender: text => {
+            if (text.length > 20) {
+              return text.substring(0, 20) + "...";
+            } else {
+              return text;
+            }
+          }
+        },
+        {
+          title: "操作",
+          key: "action",
+          width: 180,
+          scopedSlots: { customRender: "action" },
+          align: "center"
+        }
+      ],
+      tableData: [],
+      loading: false,
+      drawerTitle: "新增",
+      drawerVisible: false,
+      formData: {},
+      total: 0,
+      searchConditions: {
+        name: "",
+        sourceType: undefined,
+        page: 0,
+        size: 20
+      },
+      currentPage: 1,
+      checked: false,
+      isJDBC: Boolean,
+      isEdit: Boolean,
+      ruleValidate: {
+        name: [
+          { required: true, message: "必填", trigger: "change" },
+          { validator: validateSpecialFont, trigger: "change" }
+        ],
+        username: [{ required: true, message: "必填", trigger: "change" }],
+        password: [{ required: true, message: "必填", trigger: "change" }],
+        sourceType: [{ required: true, message: "必填", trigger: "change" }],
+        authMethod: [{ required: true, message: "必填", trigger: "change" }],
+        url: [{ required: true, message: "必填", trigger: "change" }]
+      },
+      authList: ["Basic Auth", "Digest Auth", "Oauth Auth", "Token Auth"],
+      driverClassList: ["com.mysql.cj.jdbc.Driver", "oracle.jdbc.driver.OracleDriver"],
+      typeNameList: ["oracle", "mysql"],
+      editAble: Boolean
+    };
+  },
+  methods: {
+    renderTable() {
+      this.loading = true;
+      this.$http({
+        url: "/zuul/lmanage/dataSource/page",
+        method: "get",
+        params: {
+          page: this.searchConditions.page,
+          size: this.searchConditions.size,
+          name: this.searchConditions.name,
+          sourceType: this.searchConditions.sourceType
+        }
+      }).then(res => {
+        if (res.data.success) {
+          console.log(res.data);
+          this.tableData = res.data.data.results;
+          this.total = res.data.data.total;
+        }
+        this.loading = false;
+        this.skeletonLoading = false;
+      });
+    },
+    formInit() {
+      this.formData = {
+        name: "",
+        username: "",
+        password: "",
+        isAudit: false,
+        description: "",
+        sourceType: this.formData.sourceType,
+        authMethod: undefined,
+        driverClassName: undefined,
+        url: "",
+        typeName: undefined
+      };
+    },
+    handleSearch(value) {
+      this.searchConditions.page = 0;
+      this.currentPage = 1;
+      // console.log(value);
+      this.renderTable();
+    },
+    edit(row) {
+      // console.log(id);
+      this.isEdit = true;
+      this.editAble = row.delAble;
+      this.resetFields();
+      this.$http({
+        method: "get",
+        url: "/zuul/lmanage/dataSource/page",
+        params: { id: row.id }
+      }).then(res => {
+        // console.log(...res.data.data.results);
+        this.formData = Object.assign(...res.data.data.results);
+        this.checked = !!(this.formData.isAudit * 1);
+        this.isJDBC = !!this.formData.driverClassName;
+        if (this.isJDBC) {
+          this.ruleValidate = {
+            name: [
+              { required: true, message: "必填", trigger: "change" },
+              { validator: validateSpecialFont, trigger: "change" }
+            ],
+            username: [{ required: true, message: "必填", trigger: "change" }],
+            password: [{ required: true, message: "必填", trigger: "change" }],
+            sourceType: [{ required: true, message: "必填", trigger: "change" }],
+            driverClassName: [{ required: true, message: "必填", trigger: "change" }],
+            url: [{ required: true, message: "必填", trigger: "change" }],
+            typeName: [{ required: true, message: "必填", trigger: "change" }]
+          };
+        } else {
+          this.ruleValidate = {
+            name: [
+              { required: true, message: "必填", trigger: "change" },
+              { validator: validateSpecialFont, trigger: "change" }
+            ],
+            username: [{ required: true, message: "必填", trigger: "change" }],
+            password: [{ required: true, message: "必填", trigger: "change" }],
+            sourceType: [{ required: true, message: "必填", trigger: "change" }],
+            authMethod: [{ required: true, message: "必填", trigger: "change" }]
+          };
+        }
+        console.log(this.formData);
+      });
+      this.drawerTitle = "修改";
+      this.drawerVisible = true;
+    },
+    pageChange(currentPage) {
+      this.currentPage = currentPage;
+      this.searchConditions.page = currentPage - 1;
+      console.log(this.searchConditions.page);
+      this.renderTable();
+    },
+    del(id,record) {
+      // console.log(id);
+      this.$confirm({
+        title: "信息提示",
+        content: "确认删除?",
+        okType: "danger",
+        onOk: () => {
+          this.$set(record, "deloading", true);
+          this.$http.delete("/zuul/lmanage/dataSource/delete/" + id).then(res => {
+            if (res.data.success) {
+              this.$notification.success({
+                message: "删除成功"
+              });
+              this.searchConditions.page = GetPageByDelete(
+                this.searchConditions.page,
+                this.tableData.length,
+                1
+              );
+              this.renderTable();
+              this.$set(record, "deloading", false);
+            } else {
+              this.$notification.error({
+                message: "删除失败"
+              });
+              this.$set(record, "deloading", false);
+            }
+          });
+        }
+      });
+    },
+    onClose() {
+      this.drawerVisible = false;
+      this.isJDBC = false;
+    },
+    add() {
+      this.editAble = true;
+      this.drawerTitle = "新增";
+      this.drawerVisible = true;
+      this.checked = false;
+      this.isEdit = false;
+      this.resetFields();
+      this.formInit();
+      this.formData.sourceType = "0";
+      this.isJDBC = false;
+      this.ruleValidate = {
+        name: [
+          { required: true, message: "必填", trigger: "change" },
+          { validator: validateSpecialFont, trigger: "change" }
+        ],
+        username: [{ required: true, message: "必填", trigger: "change" }],
+        password: [{ required: true, message: "必填", trigger: "change" }],
+        sourceType: [{ required: true, message: "必填", trigger: "change" }],
+        authMethod: [{ required: true, message: "必填", trigger: "change" }],
+        url: [{ required: true, message: "必填", trigger: "change" }]
+      };
+    },
+    rowClassName(record, index) {
+      let className = "even";
+      if (index % 2 === 1) {
+        className = "odd";
+      }
+      return className;
+    },
+    save() {
+      console.log(this.formData);
+      this.$refs.formModel.validate(valid => {
+        if (valid) {
+          this.formData.isAudit = this.checked ? "1" : "0";
+          this.$http({
+            method: "post",
+            url: "/zuul/lmanage/dataSource/save",
+            data: this.formData,
+            headers: {
+              "Content-Type": "application/json"
+            }
+          }).then(res => {
+            if (res.data.success) {
+              this.$notification.success({
+                message: "操作成功"
+              });
+              // this.currentPage = 1;
+              this.renderTable();
+              this.drawerVisible = false;
+            } else {
+              this.$notification.error({
+                message: "操作失败"
+              });
+            }
+          });
+        }
+      });
+    },
+    typeChange(value) {
+      this.isJDBC = !!(value * 1);
+      // console.log(this.isJDBC);
+      this.formInit();
+      if (this.isJDBC) {
+        this.ruleValidate = {
+          username: [{ required: true, message: "必填", trigger: "change" }],
+          password: [{ required: true, message: "必填", trigger: "change" }],
+          sourceType: [{ required: true, message: "必填", trigger: "change" }],
+          driverClassName: [{ required: true, message: "必填", trigger: "change" }],
+          url: [{ required: true, message: "必填", trigger: "change" }],
+          typeName: [{ required: true, message: "必填", trigger: "change" }]
+        };
+      } else {
+        this.ruleValidate = {
+          username: [{ required: true, message: "必填", trigger: "change" }],
+          password: [{ required: true, message: "必填", trigger: "change" }],
+          sourceType: [{ required: true, message: "必填", trigger: "change" }],
+          authMethod: [{ required: true, message: "必填", trigger: "change" }]
+        };
+      }
+    },
+    testing() {
+      this.$http({
+        url: "/zuul/lmanage/dataSource/connectTest",
+        params: {
+          driverClassName: this.formData.driverClassName,
+          username: this.formData.username,
+          password: this.formData.password,
+          url: this.formData.url
+        },
+        method: "get"
+      }).then(res => {
+        console.log(res);
+        if (res.data.success) {
+          this.$notification.success({
+            message: "测试成功"
+          });
+        } else {
+          this.$notification.error({
+            message: "测试失败"
+          });
+        }
+      });
+    },
+    resetFields() {
+      try {
+        this.$refs.formModel.resetFields();
+      } catch (e) {
+        // console.log(e);
+      }
+    },
+    // diverClassNameChange(value) {
+    //   console.log(value);
+    //   // this.formData.driverClassName = value;
+    //   console.log(this.formData);
+    // },
+    handleReset() {
+      this.searchConditions.name = "";
+      this.searchConditions.sourceType = undefined;
+    }
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    }
+  },
+  mounted() {
+    this.renderTable();
+  }
+};
+</script>
+
+<style scoped lang="less">
+/deep/.odd {
+  background-color: rgba(240, 240, 240, 1);
+}
+/deep/.even {
+  background-color: rgba(255, 255, 255, 1);
+  margin-bottom: 10px;
+}
+
+.btn_connect {
+  position: absolute;
+  top: 37px;
+  right: 0px;
+  height: 30px;
+}
+/deep/ .ant-form-item[data-v-1f348851] {
+  margin-bottom: 12px;
+}
+.prompt {
+  color: red;
+  font-size: 18px;
+}
+</style>

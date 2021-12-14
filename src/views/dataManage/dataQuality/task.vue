@@ -1,0 +1,730 @@
+<template>
+  <div class="dataQuality-task">
+    <div class="les-table-toolbar">
+      <div class="bread-header">
+        <a-breadcrumb>
+          <a-breadcrumb-item>
+            <router-link to="/dataManage/dataQuality/index">首页</router-link>
+          </a-breadcrumb-item>
+          <a-breadcrumb-item>
+            <router-link to="/dataManage/dataQuality/projectList">项目列表</router-link>
+          </a-breadcrumb-item>
+          <a-breadcrumb-item>
+            <router-link to="/dataManage/dataQuality/rules">{{ projectName }}</router-link>
+          </a-breadcrumb-item>
+        </a-breadcrumb>
+      </div>
+      <div>
+        <a-input
+          v-model="searchConditions.tableName"
+          placeholder="输入表名"
+          :maxLength="30"
+          style="width: 150px; margin-right: 5px"
+          allowClear
+          @change="handleSearch"
+        >
+          <a-icon slot="suffix" type="search" />
+        </a-input>
+        <a-range-picker
+          valueFormat="YYYY-MM-DD HH:mm:ss"
+          format="YYYY-MM-DD HH:mm:ss"
+          show-time
+          @change="searchTimeChange"
+          :placeholder="['计划调度开始时间起','计划调度开始时间止']"
+        >
+        </a-range-picker>
+      </div>
+    </div>
+    <vue-scroll :style="'height:' + (bodyHeight - 110) + 'px;'">
+      <a-table
+        style="width: 100%"
+        :columns="columns"
+        :data-source="tableData"
+        rowKey="id"
+        :pagination="false"
+        size="small"
+        :loading="loading"
+      >
+        <template slot="tableName" slot-scope="text, record">
+          <a-button type="link" @click="showReport(record)">{{ text }}</a-button>
+        </template>
+        <template slot="state" slot-scope="text, record">
+          <span v-if="!record.beginTime">
+            <a-badge status="error"> </a-badge>
+            <span>未开始</span>
+          </span>
+          <span v-else>
+            <a-badge
+              :status="
+                text === '0'
+                  ? 'error'
+                  : text === '1'
+                  ? 'processing'
+                  : text === '2'
+                  ? 'success'
+                  : text === '3'
+                  ? 'warning'
+                  : 'error'
+              "
+            />
+            <span>{{
+              text === "0"
+                ? "运行失败"
+                : text === "1"
+                ? "运行中"
+                : text === "2"
+                ? "校验通过"
+                : text === "3"
+                ? "校验未通过"
+                : "未开始"
+            }}</span>
+            &nbsp;
+            <a-tooltip v-show="text && (text === '2' || text === '3')">
+              <template slot="title">
+                <ul>
+                  <li v-for="(item, index) in record.tasks" :key="index">
+                    <a-badge
+                      :status="
+                        item.state === '0'
+                          ? 'error'
+                          : item.state === '1'
+                          ? 'processing'
+                          : item.state === '2'
+                          ? 'success'
+                          : item.state === '3'
+                          ? 'warning'
+                          : 'error'
+                      "
+                    ></a-badge>
+                    <span>{{ item.resultReport }}</span>
+                  </li>
+                </ul>
+              </template>
+              <span style="display:inline-block;cursor:pointer">
+                <a-icon :type="text === '0' ? 'close-circle' : 'info-circle'"></a-icon>
+              </span>
+            </a-tooltip>
+          </span>
+        </template>
+        <template slot="action" slot-scope="text, record">
+          <span v-show="record.exeState">
+            <a-button
+              v-if="record.scheduleCancelled"
+              :loading="record.loading"
+              @click="reload(record)"
+              size="small"
+              type="primary"
+              icon="reload"
+              >重启</a-button
+            >
+            <a-button
+              v-else
+              type="danger"
+              icon="stop"
+              size="small"
+              :loading="record.loading"
+              @click="stop(record)"
+              >停止</a-button
+            >
+          </span>
+        </template>
+      </a-table>
+    </vue-scroll>
+    <a-pagination
+      :defaultPageSize="20"
+      style="text-align: right; margin: 10px"
+      :showQuickJumper="this.total > 20"
+      :show-total="total => `共 ${total} 条`"
+      :total="total"
+      @change="pageChange"
+      :current="currentPage"
+    >
+    </a-pagination>
+    <a-drawer
+      :visible="reportVisible"
+      :maskClosable="true"
+      width="60%"
+      title="查看任务报告"
+      @close="drawerClose"
+    >
+      <vue-scroll :style="'height:' + (bodyHeight - 180) + 'px;'">
+        <a-spin :spinning="spinning">
+          <div class="rule" v-for="(item, index) of rules" :key="index">
+            <div class="rule-title">
+              <span>{{item.type == 0
+                    ? "完整性校验"
+                    : item.type == 1
+                    ? "准确性校验"
+                    : item.type == 2
+                    ? "规范性校验"
+                    : item.type == 3
+                    ? "唯一性校验"
+                    : "自定义SQL"}}</span>
+              <span>
+                <a-button type="link" size="small" icon="profile" @click="showDetails(item)"
+                  >查看明细</a-button
+                >
+              </span>
+            </div>
+            <a-descriptions bordered :column="2" size="small">
+              <a-descriptions-item label="字段">
+                {{ item.columnName }}
+              </a-descriptions-item>
+              <a-descriptions-item label="统计函数">
+                {{ renderFunc(item.functionId,item.type) }}
+              </a-descriptions-item>
+              <!-- <a-descriptions-item label="过滤条件" :span="2">
+                {{ item.filter === "" ? "无" : item.filter }}
+              </a-descriptions-item> -->
+              <a-descriptions-item label="校验方法">
+                {{
+                  item.verifyType === "0"
+                    ? "固定值"
+                    : item.verifyType === "1"
+                    ? "1天波动检测"
+                    : item.verifyType === "2"
+                    ? "7天波动检测"
+                    : item.verifyType === "3"
+                    ? "月度波动检测"
+                    : item.verifyType === "4"
+                    ? "7天平均值波动检测"
+                    : "月度平均值波动检测"
+                }}
+              </a-descriptions-item>
+              <a-descriptions-item label="取值范围">
+                {{ renderValueRange(item.valueRange) }}
+              </a-descriptions-item>
+              <a-descriptions-item label="规则强弱">
+                {{
+                  item.ruleStrength === "" ? "无" : item.ruleStrength === "0" ? "弱规则" : "强规则"
+                }}
+              </a-descriptions-item>
+              <a-descriptions-item label="创建时间">
+                {{ item.createdTime }}
+              </a-descriptions-item>
+            </a-descriptions>
+          </div>
+        </a-spin>
+      </vue-scroll>
+    </a-drawer>
+    <a-modal
+      class="les-drawer-form"
+      @cancel="detailClose"
+      :maskClosable="true"
+      title="查看明细"
+      :visible="detailVisible"
+      width="50%"
+    >
+      <vue-scroll :style="'height:' + (bodyHeight - 500) + 'px;'">
+        <a-table
+          style="width: 100%"
+          :columns="detailsColumns"
+          :data-source="detailsTable"
+          :pagination="false"
+          size="small"
+          :loading="detailsLoading"
+          rowKey="id"
+        >
+        </a-table>
+      </vue-scroll>
+      <a-pagination
+        :defaultPageSize="20"
+        style="text-align: right; margin: 10px"
+        :showQuickJumper="this.total > 20"
+        :show-total="total => `共 ${total} 条`"
+        :total="detailsTotal"
+        @change="detailsPageChange"
+        :current="detailsCurrentPage"
+      >
+      </a-pagination>
+      <template slot="footer">
+        <a-button @click="detailClose" type="primary"> 确定 </a-button>
+      </template>
+    </a-modal>
+  </div>
+</template>
+
+<script>
+function debounce(fn, wait) {
+  let timeout = null;
+  wait = wait || 600;
+  return function() {
+    let that = this;
+    if (timeout !== null) clearTimeout(timeout);
+    timeout = setTimeout(() => {
+      fn.apply(that);
+    }, wait);
+  };
+}
+export default {
+  name: "",
+  data() {
+    return {
+      searchConditions: {
+        name: "",
+        startTime: "",
+        endTime: "",
+        page: 0,
+        size: 20,
+        detailsPage: 0,
+        ruleId: ""
+      },
+      tableData: [],
+      columns: [
+        {
+          dataIndex: "tdataEntity.name",
+          title: "表名",
+          scopedSlots: { customRender: "tableName" },
+          align: "center",
+          width: 120
+        },
+        {
+          dataIndex: "type",
+          title: "类型",
+          align: "center",
+          customRender: text => (text === "0" ? "单表校验" : "多表对比")
+        },
+        {
+          dataIndex: "exeState",
+          title: "状态",
+          align: "center",
+          scopedSlots: { customRender: "state" }
+        },
+        {
+          dataIndex: "projectConf.alias",
+          title: "所属项目",
+          align: "center"
+        },
+        {
+          dataIndex: "tdataEntity.dataWarehouseSource",
+          title: "数据源",
+          align: "center",
+          customRender: text => {
+            return text.typeName + "/" + text.name;
+          }
+        },
+        {
+          dataIndex: "scheduleConf.beginTime",
+          title: "计划调度开始时间",
+          align: "center",
+          customRender: text => (text ? text : "未开始")
+        },
+        {
+          dataIndex: "scheduleConf.endTime",
+          title: "计划调度结束时间",
+          align: "center",
+          customRender: text => (text ? text : "未开始")
+        },
+        {
+          dataIndex: "scheduleConf.periodType",
+          title: "周期",
+          align: "center",
+          customRender: text => (text == "0" ? "分" : "时")
+        },
+        {
+          dataIndex: "scheduleConf.timeInterval",
+          title: "间隔分钟",
+          align: "center"
+        },
+        {
+          title: "操作",
+          scopedSlots: { customRender: "action" },
+          align: "center"
+        }
+      ],
+      total: 0,
+      loading: false,
+      currentPage: 1,
+      projectList: [],
+      reportVisible: false,
+      detailVisible: false,
+      detailsTable: [],
+      detailsColumns: [
+        {
+          dataIndex: "state",
+          title: "状态",
+          align: "center",
+          customRender: text => {
+            switch (text) {
+              case "0":
+                return (
+                  <span>
+                    <a-badge status="error" />
+                    <span>运行失败</span>
+                  </span>
+                );
+              case "1":
+                return (
+                  <span>
+                    <a-badge status="processing" />
+                    <span>运行中</span>
+                  </span>
+                );
+              case "2":
+                return (
+                  <span>
+                    <a-badge status="success" />
+                    <span>校验通过</span>
+                  </span>
+                );
+              case "3":
+                return (
+                  <span>
+                    <a-badge status="warning" />
+                    <span>校验未通过</span>
+                  </span>
+                );
+              default:
+                break;
+            }
+          }
+        },
+        {
+          dataIndex: "beginTime",
+          title: "开始时间",
+          align: "center",
+          customRender: text => (text ? text : "未开始")
+        },
+        {
+          dataIndex: "endTime",
+          title: "结束时间",
+          align: "center"
+        },
+        {
+          dataIndex: "resultReport",
+          title: "结果报告",
+          align: "center"
+        }
+      ],
+      columnList: [],
+      funcList: [],
+      projectName: "",
+      rules: [],
+      spinning: false,
+      detailsTotal: 0,
+      detailsCurrentPage: 1,
+      detailsLoading: false,
+      funcList0:[],
+      funcList1:[],
+      funcList2:[],
+      funcList3:[]
+    };
+  },
+  methods: {
+    pageChange(currentPage) {
+      this.currentPage = currentPage;
+      this.searchConditions.page = currentPage - 1;
+      console.log(this.searchConditions.page);
+      this.renderTable();
+    },
+    renderTable() {
+      let { page, size, tableName, startTime, endTime } = this.searchConditions;
+      this.loading = true;
+      this.$http({
+        method: "get",
+        url: "/zuul/lmanage/dataQuality/task/page",
+        params: {
+          page,
+          size,
+          tableName,
+          endTime,
+          startTime,
+          projectId: localStorage.getItem("projectId")
+        }
+      }).then(res => {
+        if (res.data.success) {
+          console.log(res.data);
+          this.tableData = res.data.data.results;
+          this.total = res.data.data.total;
+        }
+        this.loading = false;
+      });
+    },
+    searchTimeChange(date) {
+      this.searchConditions.startTime = date[0];
+      this.searchConditions.endTime = date[1];
+      console.log("开始时间", this.searchConditions.startTime);
+      console.log("结束时间", this.searchConditions.endTime);
+      this.renderTable();
+    },
+    handleSearch: debounce(function() {
+      // this.formData.projectId = this.searchConditions.projectId;
+      this.renderTable();
+    }, 500),
+    showReport(record) {
+      console.log(record);
+      this.reportVisible = true;
+      this.spinning = true;
+      ///根据表的id获取字段的字典
+      this.getColumn(record.tdataEntity.id);
+      //根据单表或者多表获取校验方法
+      this.getFunc(record.type);
+      this.rules = record.rules;
+      this.spinning = false;
+      console.log(this.rules);
+    },
+    drawerClose() {
+      this.reportVisible = false;
+    },
+    detailClose() {
+      this.detailVisible = false;
+    },
+    showDetails(item) {
+      console.log(item);
+      this.detailVisible = true;
+      this.searchConditions.ruleId = item.id;
+      this.renderDetailsTable();
+    },
+    //获取表下的字段
+    getColumn(value) {
+      if (value) {
+        this.$http({
+          url: "/zuul/lmanage/dataEntity/column/dict",
+          params: {
+            assetId: value
+          },
+          method: "get"
+        }).then(res => {
+          this.columnList = res.data.data;
+          console.log(this.columnList);
+        });
+      } else {
+        this.columnList = [];
+        console.log(this.columnList);
+      }
+    },
+    //根据类型(单表/多表)获取统计函数
+    getFunc(value) {
+      if (value) {
+        this.$http({
+          url: "/zuul/lmanage/dataQuality/rule/udf",
+          params: {
+            type: value
+          },
+          method: "get"
+        }).then(res => {
+          this.funcList = res.data.data;
+          console.log(this.funcList);
+        });
+      } else {
+        this.funcList = [];
+        console.log(this.funcList);
+      }
+    },
+    //渲染字段到页面
+    // renderColumns(value) {
+    //   let columnName = "";
+    //   this.columnList.forEach(item => {
+    //     if (item.value === value) {
+    //       columnName = item.label;
+    //     }
+    //   });
+    //   return columnName;
+    // },
+    //渲染统计函数到页面
+    renderFunc(value,type) {
+      let func = "";
+      this["funcList"+type].forEach(item => {
+        if (item.id === value) {
+          func = item.functionName;
+        }
+      });
+      return func;
+    },
+    //渲染取值范围,拼接显示
+    renderValueRange(value) {
+      let valueRange = JSON.parse(value);
+      let showValue = "";
+      if (valueRange.relationType === "0") {
+        showValue =
+          (valueRange.postOperator === "="
+            ? "等于"
+            : valueRange.postOperator === ">"
+            ? "大于"
+            : valueRange.postOperator === "<"
+            ? "小于"
+            : valueRange.postOperator === ">="
+            ? "大于等于"
+            : "小于等于") + valueRange.postValue;
+      } else if (valueRange.relationType === "1") {
+        showValue =
+          (valueRange.postOperator === "="
+            ? "等于"
+            : valueRange.postOperator === ">"
+            ? "大于"
+            : valueRange.postOperator === "<"
+            ? "小于"
+            : valueRange.postOperator === ">="
+            ? "大于等于"
+            : "小于等于") +
+          valueRange.postValue +
+          "或" +
+          (valueRange.preOperator === "="
+            ? "等于"
+            : valueRange.preOperator === ">"
+            ? "大于"
+            : valueRange.preOperator === "<"
+            ? "小于"
+            : valueRange.preOperator === ">="
+            ? "大于等于"
+            : "小于等于") +
+          valueRange.preValue;
+      } else if (valueRange.relationType === "2") {
+        showValue =
+          (valueRange.postOperator === "="
+            ? "等于"
+            : valueRange.postOperator === ">"
+            ? "大于"
+            : valueRange.postOperator === "<"
+            ? "小于"
+            : valueRange.postOperator === ">="
+            ? "大于等于"
+            : "小于等于") +
+          valueRange.postValue +
+          "且" +
+          (valueRange.preOperator === "="
+            ? "等于"
+            : valueRange.preOperator === ">"
+            ? "大于"
+            : valueRange.preOperator === "<"
+            ? "小于"
+            : valueRange.preOperator === ">="
+            ? "大于等于"
+            : "小于等于") +
+          valueRange.preValue;
+      }
+      return showValue;
+    },
+    detailsPageChange(currentPage) {
+      this.detailsCurrentPage = currentPage;
+      this.searchConditions.detailsPage = currentPage - 1;
+      console.log(this.searchConditions.detailsPage);
+      this.renderDetailsTable();
+    },
+    renderDetailsTable() {
+      this.detailsLoading = true;
+      this.$http({
+        method: "get",
+        url: "/zuul/lmanage/dataQuality/rule/task",
+        params: {
+          ruleId: this.searchConditions.ruleId,
+          page: this.searchConditions.detailsPage,
+          size: 20
+        }
+      }).then(res => {
+        if (res.data.success) {
+          console.log(res.data);
+          this.detailsTable = res.data.data.results;
+          this.detailsTotal = res.data.data.total;
+        }
+        this.detailsLoading = false;
+      });
+    },
+    stop(record) {
+      this.$set(record, "loading", true);
+      // console.log(record);
+      this.$http({
+        url: "/zuul/lmanage/dataQuality/monitor/stopSchedule",
+        method: "post",
+        data: {
+          id: record.id
+        }
+      }).then(res => {
+        if (res.data.success) {
+          this.$notification.success({
+            message: "操作成功",
+            duration: 2
+          });
+          this.renderTable();
+        } else {
+          this.$notification.error({
+            message: "操作失败",
+            duration: 2
+          });
+        }
+        this.$set(record, "loading", true);
+      });
+    },
+    reload(record) {
+      this.$set(record, "loading", true);
+      // console.log(record);
+      this.$http({
+        url: "/zuul/lmanage/dataQuality/monitor/resubmit",
+        method: "post",
+        data: {
+          id: record.id
+        }
+      }).then(res => {
+        if (res.data.success) {
+          this.$notification.success({
+            message: "操作成功",
+            duration: 2
+          });
+          this.renderTable();
+           this.$set(record, "loading", false);
+        } else {
+          this.$notification.error({
+            message: res.data.data,
+            duration: 2,
+          });
+           this.$set(record, "loading", false);
+        }
+       
+      });
+    },
+    getFuncByType(value) {
+      if (value) {
+        this.$http({
+          url: "/zuul/lmanage/dataQuality/rule/udf",
+          params: {
+            type: value
+          },
+          method: "get"
+        }).then(res => {
+          this["funcList" + value] = res.data.data;
+          console.log(this.funcList0);
+        });
+      } else {
+        this["funcList" + value]=[];
+        // console.log(this.funcList);
+      }
+    },
+  },
+  mounted() {
+    this.renderTable();
+    this.projectName = localStorage.getItem("projectName");
+    this.getFuncByType('0')
+    this.getFuncByType('1')
+    this.getFuncByType('2')
+    this.getFuncByType('3')
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    }
+  }
+};
+</script>
+
+<style scoped lang="less">
+.rule {
+  padding: 20px;
+  border: 1px solid #e8e8e8;
+  .rule-title {
+    color: #0aa1ed;
+    font-size: 1.25rem;
+    font-weight: bolder;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+}
+/deep/.bread-header {
+  .ant-breadcrumb {
+    font-size: 1.25rem;
+  }
+}
+.dataQuality-task{
+  background-color: #fff;
+}
+</style>

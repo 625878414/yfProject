@@ -1,0 +1,1930 @@
+<template>
+  <div class="unit-index">
+    <div class="les-table-toolbar">
+      <a-button-group>
+        <a-button type="primary" icon="plus" @click="add">
+          新增
+        </a-button>
+      </a-button-group>
+      <div>
+        <a-input
+          v-model="searchConditions.name"
+          style="width:150px;margin-left:5px"
+          allowClear
+          placeholder="名称"
+          :maxLength="10"
+        >
+          <a-icon slot="suffix" type="search" />
+        </a-input>
+        <a-input
+          v-model="searchConditions.aliases"
+          style="width:150px;margin-left:5px"
+          allowClear
+          placeholder="别名"
+          :maxLength="10"
+        >
+          <a-icon slot="suffix" type="search" />
+        </a-input>
+        <a-select
+          v-model="searchConditions.dataSourceId"
+          style="width:150px;margin-left:5px;margin-right:5px;"
+          placeholder="请选择数据源"
+          allowClear
+        >
+          <a-select-option :value="item.value" v-for="item in dataSourceList" :key="item.value">
+            {{ item.label }}
+          </a-select-option>
+        </a-select>
+        <a-range-picker
+          :format="dateFormat"
+          v-model="date"
+          @change="timeChange"
+          :valueFormat="valueFormat"
+          style="width:200px"
+        />
+        <a-button type="primary" icon="search" style="margin-left:5px" @click="handleSearch"
+          >查询</a-button
+        >
+        <a-button type="danger" icon="close-circle" style="margin-left:5px" @click="handleReset"
+          >重置</a-button
+        >
+      </div>
+    </div>
+    <vue-scroll :style="'height:' + (bodyHeight - 60) + 'px;'">
+      <a-table
+        style="width: 100%"
+        :columns="columns"
+        :data-source="tableData"
+        rowKey="id"
+        :pagination="false"
+        size="small"
+        :rowClassName="rowClassName"
+        :loading="loading"
+      >
+        <template slot="classificationNames" slot-scope="row">
+          <span v-if="row.classificationNames">
+            <a-tag
+              v-for="(tag, index) in row.classificationNames.split(',')"
+              color="green"
+              :key="index"
+              >{{ tag }}</a-tag
+            >
+          </span>
+          <span v-else>
+            无
+          </span>
+        </template>
+        <template slot="action" slot-scope="row, record">
+          <a-button
+            style="margin-right:5px"
+            type="primary"
+            icon="info-circle"
+            size="small"
+            @click="getDetails(row)"
+            >详情</a-button
+          >
+          <a-button
+            style="margin-right:5px"
+            type="primary"
+            icon="edit"
+            size="small"
+            @click="edit(row)"
+            >修改</a-button
+          >
+          <a-button
+            type="danger"
+            icon="delete"
+            size="small"
+            @click="del(row, record)"
+            :loading="record.deloading"
+            >删除</a-button
+          >
+        </template>
+        <template slot="renderCatalog" slot-scope="text">
+          <a-tooltip placement="top" v-if="renderCatalogText(text).length > 15">
+            <template slot="title">
+              <span>{{ renderCatalogText(text) }}</span>
+            </template>
+            {{ renderCatalogText(text).substr(0, 10) + "..." }}
+          </a-tooltip>
+          <span v-else>
+            {{ renderCatalogText(text) }}
+          </span>
+        </template>
+      </a-table>
+    </vue-scroll>
+    <a-pagination
+      :defaultPageSize="20"
+      style="text-align:right;margin:10px"
+      :showQuickJumper="this.total > 20"
+      :show-total="total => `共 ${total} 条`"
+      :total="total"
+      @change="pageChange"
+      :current="currentPage"
+    >
+    </a-pagination>
+    <a-drawer
+      class="les-drawer-form"
+      @close="onCloseEdit"
+      :maskClosable="true"
+      :title="drawerTitle"
+      :visible="drawerEdit"
+      width="80%"
+    >
+      <a-spin size="large" :spinning="sourceTableLoading">
+        <div class="table-search">
+          <a-form-model
+            :model="formDataParent"
+            layout="inline"
+            v-if="!this.formData.id"
+            :rules="ruleValidate"
+            ref="form"
+          >
+            <a-form-model-item label="数据源">
+              <a-select
+                v-model="formDataParent.dataSourceId"
+                style="width:150px;margin-right:5px"
+                placeholder="数据源"
+                @change="sourceChange"
+                ref="select"
+              >
+                <a-select-option
+                  v-for="item in dataSourceList1"
+                  :value="item.value"
+                  :key="item.value"
+                >
+                  {{ item.label }}
+                </a-select-option>
+              </a-select>
+            </a-form-model-item>
+            <a-form-model-item label="类型" v-show="sourceType == '0'">
+              <a-select v-model="formData.typeName" style="width:150px;margin-right:5px">
+                <a-select-option v-for="(item, index) in typeNameList" :value="item" :key="index">
+                  {{ item }}
+                </a-select-option>
+              </a-select>
+            </a-form-model-item>
+            <a-form-model-item label="所属目录" prop="assetCatalogId">
+              <a-cascader
+                :options="catalogList"
+                placeholder="请选择目录"
+                v-model="formDataParent.assetCatalogId"
+                change-on-select
+                @change="catalogChange"
+                @blur="catalogBlur"
+                ref="cascader"
+              />
+            </a-form-model-item>
+          </a-form-model>
+          <div v-else class="eidtForm">
+            <a-descriptions bordered size="small" class="des">
+              <a-descriptions-item label="数据源">
+                {{ sourceName }}
+              </a-descriptions-item>
+              <a-descriptions-item label="所属表名">
+                {{ formData.name }}
+              </a-descriptions-item>
+            </a-descriptions>
+            <a-form-model :model="formDataParent" layout="inline" :rules="ruleValidate" ref="form">
+              <a-form-model-item label="所属目录">
+                <a-cascader
+                  :options="catalogList"
+                  placeholder="请选择目录"
+                  v-model="formDataParent.assetCatalogId"
+                  change-on-select
+                  @change="catalogChange"
+                  prop="assetCatalogId"
+                />
+              </a-form-model-item>
+            </a-form-model>
+          </div>
+        </div>
+        <div class="content">
+          <div class="table-content">
+            <a-layout>
+              <a-layout-sider v-show="!this.formData.id">
+                <div style="width:100%;text-align:center" class="search-tableName">
+                  <a-input
+                    placeholder="请输入表名"
+                    style="width:150px;"
+                    v-model="searchTableName"
+                    :disabled="!!formData.id"
+                    @change="searchTableChange"
+                  >
+                    <a-icon slot="prefix" type="search" />
+                  </a-input>
+                </div>
+                <vue-scroll :style="'height:' + (bodyHeight - 295) + 'px;'" ref="vs">
+                  <a-menu :selectedKeys="currentSelectedKey">
+                    <a-menu-item
+                      v-for="(item, index) in filterTableNameList"
+                      :key="index + ''"
+                      @click="changeTableName"
+                      :id="currentSelectedKey.toString() * 1 == index ? 'menu' : ''"
+                      :disabled="!!formData.id"
+                    >
+                      <span>{{ item.tableName }}</span>
+                    </a-menu-item>
+                  </a-menu>
+                </vue-scroll>
+              </a-layout-sider>
+              <vue-scroll :style="'height:' + (bodyHeight - 242) + 'px;'" ref="vs-table">
+                <a-layout-content class="contentTable">
+                  <a-table
+                    ref="table"
+                    size="small"
+                    :columns="sourceTableColumns"
+                    :dataSource="sourceTableData"
+                    :rowKey="(record, index) => index"
+                    :rowSelection="
+                      !notEditable
+                        ? {
+                            selectedRowKeys: selectedIds,
+                            onChange: onSelectChange,
+                            onSelect,
+                            onSelectAll
+                          }
+                        : null
+                    "
+                    :pagination="false"
+                    :rowClassName="rowClassName"
+                  >
+                    <template slot="guid" slot-scope="text">
+                      <a-tooltip v-if="text" overlayClassName="colunm-tooltip">
+                        <template slot="title">
+                          <span id="span">{{ text }}</span>
+                        </template>
+                        {{ text.substring(0, 10) + "..." }}
+                      </a-tooltip>
+                      <span v-else>无</span>
+                    </template>
+                    <template slot="comments" slot-scope="text, record, index">
+                      <div class="editable-cell">
+                        <div v-if="record.editable" class="editable-cell-input-wrapper">
+                          <a-input
+                            v-model="record.comment"
+                            style="width:150px;text-align:center"
+                            :maxLength="10"
+                            placeholder="最多10个字符"
+                          /><a-icon
+                            type="check"
+                            class="editable-cell-icon-check"
+                            @click="check(record, index)"
+                          />
+                        </div>
+                        <div v-else class="editable-cell-text-wrapper">
+                          {{ text || " " }}
+                          <a-icon
+                            type="edit"
+                            class="editable-cell-icon"
+                            @click="editComment(record)"
+                            v-show="record.selected && !notEditable"
+                          />
+                        </div>
+                      </div>
+                    </template>
+                  </a-table>
+                </a-layout-content>
+              </vue-scroll>
+            </a-layout>
+          </div>
+          <div class="form-content">
+            <Form
+              ref="formChild"
+              :isEdit="isEdit"
+              @createIndexF="createIndexF"
+              :isHive="isHive"
+              :notEditable="notEditable"
+            ></Form>
+            <p v-show="notEditable" class="prompt">提示:{{ message }}</p>
+          </div>
+        </div>
+        <div class="footer" :style="`margin-top:${this.createIndex ? '20px' : '100px'}`">
+          <a-button type="danger" @click="onCloseEdit">关闭</a-button>
+          <a-button type="primary" style="margin-left:5px" @click="save" :loading="btnLoading"
+            >保存</a-button
+          >
+        </div>
+      </a-spin>
+    </a-drawer>
+    <a-drawer
+      :maskClosable="true"
+      title="元数据详情"
+      width="40%"
+      :visible="drawerDetails"
+      @close="onCloseDetails"
+    >
+      <a-descriptions title="元数据详情" bordered :column="1" size="small">
+        <a-descriptions-item label="名称">
+          {{ details.name }}
+        </a-descriptions-item>
+        <a-descriptions-item label="ID">
+          {{ details.id }}
+        </a-descriptions-item>
+        <a-descriptions-item label="描述">
+          {{ details.description ? details.description : "无" }}
+        </a-descriptions-item>
+        <a-descriptions-item label="数据源ID">
+          {{ details.dataSourceId }}
+        </a-descriptions-item>
+        <a-descriptions-item label="数据源文件">
+          {{ details.dataSourceFile }}
+        </a-descriptions-item>
+        <a-descriptions-item label="索引字段">
+          {{ elements != "" ? elements : "无" }}
+        </a-descriptions-item>
+      </a-descriptions>
+      <!-- <p class="columns-details-title">列信息详情</p> -->
+      <div class="columns-details-title">
+        <vue-scroll :style="'height:' + (bodyHeight - 400) + 'px;'">
+          <a-table
+            size="small"
+            :columns="sourceTableColumns"
+            :dataSource="columnDetails"
+            :rowKey="(record, index) => index"
+            :pagination="false"
+            bordered
+          >
+            <template slot="guid" slot-scope="text">
+              <a-tooltip v-if="text" overlayClassName="colunm-tooltip">
+                <template slot="title">
+                  <span>{{ text }}</span>
+                </template>
+                {{ text.substring(0, 10) + "..." }}
+              </a-tooltip>
+              <span v-else>无</span>
+            </template>
+          </a-table>
+        </vue-scroll>
+      </div>
+    </a-drawer>
+  </div>
+</template>
+
+<script>
+// import { delete } from "vue/types/umd";
+// import sourceTable from "./sourceTable";
+// import { validateSpecialFont } from "../../libs/validate";
+import { GetPageByDelete } from "../../libs/util";
+import Form from "./components/form.vue";
+import pinyin from "js-pinyin";
+export default {
+  name: "unit-index",
+  data() {
+    return {
+      searchTableName: "",
+      searchConditions: {
+        dataSourceId: undefined,
+        aliases: "",
+        page: 0,
+        size: 20,
+        name: "",
+        beginTime: "",
+        endTime: ""
+      },
+      loading: false,
+      // skeletonLoading: true,
+      columns: [
+        {
+          title: "序号",
+          align: "center",
+          customRender: (text, record, index) => index + 1,
+          width: 50
+        },
+        {
+          dataIndex: "name",
+          title: "名称",
+          align: "center"
+        },
+        {
+          dataIndex: "aliases",
+          title: "别名",
+          align: "center",
+          customRender: text => (text ? text : "未知")
+        },
+        {
+          dataIndex: "typeName",
+          title: "存储类型",
+          align: "center"
+        },
+        {
+          title: "数据源",
+          dataIndex: "dataSourceId",
+          align: "center",
+          customRender: text => {
+            return this.renderDataSourceFile(text);
+          }
+        },
+        {
+          title: "来源类型",
+          align: "center",
+          dataIndex: "originTypeName",
+          customRender: text => (text ? text : "未知")
+        },
+        {
+          title: "所属目录",
+          align: "center",
+          dataIndex: "assetCatalogIds",
+          scopedSlots: { customRender: "renderCatalog" }
+        },
+        {
+          title: "标签",
+          align: "center",
+          key: "classificationNames",
+          scopedSlots: { customRender: "classificationNames" }
+        },
+        {
+          title: "创建时间",
+          align: "center",
+          dataIndex: "createdTime",
+          customRender: text => (text ? text : "未知")
+        },
+        {
+          title: "更新时间",
+          align: "center",
+          dataIndex: "updateTime",
+          customRender: text => (text ? text : "未知")
+        },
+        {
+          title: "操作",
+          key: "action",
+          width: 240,
+          scopedSlots: { customRender: "action" },
+          align: "center"
+        }
+      ],
+      tableData: [],
+      currentPage: 1,
+      dataSourceList: [],
+      dataSourceList1: [],
+      drawerTitle: "修改",
+      drawerEdit: false,
+      drawerDetails: false,
+      details: {},
+      total: 0,
+      currentPage: 1,
+      tableNameList: [],
+      sourceTableColumns: [],
+      sourceTableData: [],
+      rowSelection: [],
+      selectedIds: [],
+      typeNameList: ["hive_table"],
+      currentSelectedKey: ["0"],
+      columnData: "",
+      formData: {
+        typeName: "",
+        name: ""
+      },
+      ruleValidate: {
+        assetCatalogId: [{ required: true, message: "必填", trigger: "change" }]
+      },
+      sourceTableLoading: false,
+      isEdit: Boolean,
+      columnDetails: [],
+      sourceType: "",
+      inputPre: "",
+      notEditable: false,
+      sourceName: "",
+      message: "",
+      createIndex: false,
+      isHive: "",
+      saveErr: false,
+      btnLoading: false,
+      elements: "",
+      catalogList: [],
+      // assetCatalogIds: [],
+      dateFormat: "YYYY-MM-DD",
+      valueFormat: "YYYY-MM-DD 00:00:00",
+      date: [],
+      selectOptions: [],
+      formDataParent: {}
+    };
+  },
+  methods: {
+    add() {
+      this.notEditable = false;
+      this.isEdit = false;
+      //重置搜索框的表名
+      this.searchTableName = "";
+      //重置当前选中的左边menu的表名为第一个
+      this.currentSelectedKey = ["0"];
+      //重置多选按钮
+      this.selectedIds = [];
+      //重置表单
+      this.resetFields();
+      // this.formDataParent.assetCatalogId=[];
+      this.createIndex = false;
+      try {
+        this.$refs.formChild.formChild = {
+          name: "",
+          classificationNames: [],
+          aliases: "",
+          description: "",
+          esColumns: [],
+          createIndex: false
+        };
+      } catch (error) {}
+      this.$nextTick(() => {
+        this.initIndex();
+      });
+      this.formData = {
+        name: "",
+        description: "",
+        classificationNames: "",
+        dataSourceFile: "",
+        guid: "",
+        columns: "",
+        id: "",
+        // dataSourceId: "",
+        typeName: "hive_table",
+        aliases: "",
+        // sourceChanged: false,
+        rawLineageImpactPoint: null,
+        rawLineageImpact: null,
+        originTypeName: "hive_table",
+        assetCatalogIds: []
+      };
+      console.log(this.formDataParent.assetCatalogId);
+      try {
+        this.formDataParent.dataSourceId = this.dataSourceList1[0].value;
+      } catch (error) {}
+      // console.log("初始", this.formData);
+      this.drawerTitle = "新增";
+      this.drawerEdit = true;
+      //重置当前的类型为大数据
+      // this.sourceType = "0";
+      let arr = this.dataSourceList1.filter(item => {
+        return item.value == this.formDataParent.dataSourceId;
+      });
+      // //获取当前选中的数据类型为JDBC还是大数据
+      this.sourceType = arr[0].sourceType;
+      console.log(this.sourceType);
+      // if (this.sourceType == "0") {
+      //   this.formData.originTypeName = "hive_table";
+      // }else if(this.sourceType=="2"){
+      //   this.formData.originTypeName="kafka"
+      // }
+      this.formData.originTypeName =
+        this.sourceType == "0" ? "hive_table" : this.sourceType == "1" ? null : "kafka";
+      this.renderColumns();
+      //默认当前获取数据的为大数据类型
+      this.formDataParent.dataSourceId = this.dataSourceList1[0].value;
+      console.log(this.formDataParent.dataSourceId);
+      //获取数据
+      this.getSourceTable();
+      try {
+        this.$refs["vs-table"].scrollTo({ y: 0 }, 500);
+      } catch (error) {
+        // console.log(error);
+      }
+    },
+    //分页
+    handleSearch(value) {
+      this.searchConditions.page = 0;
+      this.currentPage = 1;
+      console.log(value);
+      this.renderTable();
+    },
+    //表格隔行变色
+    rowClassName(record, index) {
+      let className = "even";
+      if (index % 2 === 1) {
+        className = "odd";
+      }
+      return className;
+    },
+    // overlayClassName(){
+    //   return "overlayClassName"
+    // },
+    //切换页码
+    pageChange(currentPage) {
+      this.currentPage = currentPage;
+      this.searchConditions.page = currentPage - 1;
+      // console.log(this.searchConditions.page);
+      this.renderTable();
+    },
+    //获取元数据表
+    renderTable() {
+      this.loading = true;
+      this.$http({
+        url: "/zuul/lmanage/dataEntity/page",
+        method: "get",
+        params: {
+          page: this.searchConditions.page,
+          size: this.searchConditions.size,
+          dataSourceId: this.searchConditions.dataSourceId,
+          aliases: this.searchConditions.aliases,
+          name: this.searchConditions.name,
+          beginTime: this.searchConditions.beginTime,
+          endTime: this.searchConditions.endTime
+        }
+      }).then(res => {
+        if (res.data.success) {
+          this.tableData = res.data.data.results;
+          this.total = res.data.data.total;
+          // console.log("本地元数据:", res.data);
+        }
+        this.loading = false;
+        this.skeletonLoading = false;
+      });
+    },
+    //获取数据源类型字典(大数据和JDBC)
+    renderDataSourceDict() {
+      this.$http({
+        method: "get",
+        url: "/zuul/lmanage/dataSource/dataSourceDict"
+      }).then(res => {
+        console.log("数据源字典:", res.data.data);
+        this.dataSourceList = res.data.data;
+        this.dataSourceList1 = res.data.data;
+      });
+    },
+    edit(row) {
+      //调用接口,查看此条数据是否可修改
+      this.notEditable = false;
+      this.sourceTableLoading = true;
+      this.$http({
+        params: { operate: "update" },
+        url: `/zuul/lmanage/dataEntity/useSate/${row.id}`,
+        method: "get"
+      }).then(res => {
+        console.log(res.data.data.message);
+        this.notEditable = res.data.data.isUsed;
+        this.message = res.data.data.message;
+        console.log(this.notEditable);
+      });
+      //重置表单
+      this.resetFields();
+      this.$nextTick(() => {
+        this.initIndex();
+      });
+      //重置搜索框的表名
+      this.searchTableName = "";
+      //过滤出此条数据为大数据类型还是JDBC类型;
+      let arr = this.dataSourceList1.filter(item => {
+        return item.value == row.dataSourceId;
+      });
+      // console.log(arr);
+      this.sourceType = arr[0].sourceType;
+      this.sourceName = arr[0].label;
+      // console.log(this.sourceType);
+      //根据当前数据类型不同 渲染不同的列
+      this.renderColumns();
+      this.drawerTitle = "修改";
+      this.drawerEdit = true;
+      this.isEdit = true;
+      // console.log(this.isEdit);
+      // 重置当前左边选中的table为第一个;
+      this.currentSelectedKey = ["0"];
+      this.selectedIds = [];
+      //是否为数据源类型切换
+      this.sourceChanged = false;
+
+      console.log(this.$refs.formChild);
+      //获取当前元数据的内容
+      this.$http({
+        url: "/zuul/lmanage/dataEntity/page",
+        method: "get",
+        params: {
+          id: row.id
+        }
+      })
+        .then(res => {
+          if (res.data.success) {
+            console.log(res.data.data.results);
+            this.formData = Object.assign(...res.data.data.results);
+            this.$set(
+              this.formDataParent,
+              "assetCatalogId",
+              this.formData.assetCatalogIds.split(",")
+            );
+            this.formDataParent.dataSourceId = this.formData.dataSourceId;
+            console.log(this.formDataParent.assetCatalogId);
+            // this.formData.typeName = "hive_table";
+            this.formData.originTypeName =
+              this.sourceType == "0" ? "hive_table" : this.sourceType == "1" ? null : "kafka";
+            console.log("typeName", this.formData.typeName);
+            let { name, aliases, description, createIndex, esColumns } = this.formData;
+            this.$refs.formChild.formChild = {
+              name,
+              aliases,
+              description,
+              createIndex,
+              esColumns
+            };
+            if (this.formData.classificationNames == "") {
+              this.$refs.formChild.formChild.classificationNames = [];
+            } else {
+              this.$refs.formChild.formChild.classificationNames = this.formData.classificationNames.split(
+                ","
+              );
+            }
+            console.log(this.formData);
+            this.createIndex = this.formData.createIndex;
+            let columns = JSON.parse(this.formData.columns);
+            columns.forEach(item => {
+              this.$refs.formChild.indexList.push(item.columnName);
+              this.$refs.formChild.splicingId.push(item.columnName);
+            });
+            if (this.formData.esColumns != "") {
+              this.$refs.formChild.formChild.esColumns = JSON.parse(this.formData.esColumns);
+              this.$refs.formChild.formChild.esColumns.forEach((item, index) => {
+                if (item.searchType == "1") {
+                  this.$refs.formChild.accurateValue.push(item.columnName);
+                } else if (item.searchType == "0") {
+                  this.$refs.formChild.blurryValue.push(item.columnName);
+                } else if (index == this.$refs.formChild.formChild.esColumns.length - 1) {
+                  console.log(item);
+                  let idList = item.elements.split(",");
+                  idList.forEach(item => {
+                    this.$refs.formChild.idValue.push(item);
+                    this.$refs.formChild.idShow.push(`{${item}}`);
+                  });
+                  console.log(idList);
+                }
+              });
+              this.$refs.formChild.accurateValue.forEach(item => {
+                this.$refs.formChild.indexList.forEach((item1, index) => {
+                  if (item == item1) {
+                    this.$refs.formChild.indexList.splice(index, 1);
+                  }
+                });
+              });
+              this.$refs.formChild.blurryValue.forEach(item => {
+                this.$refs.formChild.indexList.forEach((item1, index) => {
+                  if (item == item1) {
+                    this.$refs.formChild.indexList.splice(index, 1);
+                  }
+                });
+              });
+            }
+          }
+        })
+        .then(res => {
+          //获取数据源下的表
+          if (this.notEditable) {
+            this.sourceTableData = JSON.parse(this.formData.columns);
+            this.sourceTableLoading = false;
+          } else {
+            this.getSourceTable();
+          }
+        });
+    },
+    onCloseEdit() {
+      this.drawerEdit = false;
+      this.$refs.formChild.$children[0].resetFields();
+      this.$refs.formChild.inputSelf = false;
+      this.$refs.cascader.sValue = [];
+    },
+    onCloseDetails() {
+      this.drawerDetails = false;
+    },
+    getDetails(row) {
+      this.drawerDetails = true;
+      this.details = row;
+      if (row.esColumns != "") {
+        let esColumns = JSON.parse(row.esColumns);
+        this.elements = esColumns[esColumns.length - 1].elements;
+      }
+      //过滤出当前行的数据源类型,得到一个数组,这个数组就是当前数据的数据源字典
+      let arr = this.dataSourceList1.filter(item => {
+        return item.value == row.dataSourceId;
+      });
+      console.log(arr);
+      //得到当前行的数据类型为大数据还是JDBC
+      this.sourceType = arr[0].sourceType;
+      //根据类型不同渲染不同的列字段
+      this.renderColumns();
+      //当前行的列信息发序列化 变为数组
+      // console.log(JSON.parse(this.details.columns));
+      //判断当前数据的列信息是否存在,如果存在 转为数组,否则为空
+      if (this.details.columns) {
+        this.columnDetails = JSON.parse(this.details.columns);
+      } else {
+        this.columnDetails = [];
+      }
+    },
+    changeTableName(item) {
+      this.sourceTableLoading = true;
+      this.formData.name = "";
+      this.$refs.formChild.formChild.createIndex = false;
+      //当左边menu表名发生改变时,获取当前选中的那个表名
+      this.currentSelectedKey = [`${item.key}`];
+      //重置多选按钮
+      this.selectedIds = [];
+      this.initIndex();
+      //选中表名之后表单的列要重置
+      this.formData.columns = "";
+      // console.log(this.columnData);
+      // console.log(item.key);
+      // console.log(this.currentSelectedKey);
+      //当前选中的item.key就是当前选中的表名在表名列表对应的下标位置 所以当前选中的表名就是表名列表对应的下标位置的那个对象的tableName属性
+      let tableName = this.filterTableNameList[item.key].tableName;
+      // console.log(tableName);
+      this.formData.dataSourceFile = tableName;
+      // 获取当前的数据源名称
+      let arr = this.dataSourceList1.filter(item => {
+        return item.value == this.formDataParent.dataSourceId;
+      });
+      // this.inputPre = arr[0].label + "_" + tableName + "_";
+      // this.$refs.formChild.inputPre = this.inputPre;
+      // this.formData.name = this.inputPre;
+      // this.$refs.formChild.formChild.name = this.inputPre;
+      //编码同理
+      let guid = this.filterTableNameList[item.key].guid;
+      // console.log(this.formData.dataSourceFile, "guid" + this.formData.guid);
+      //根据选中的表名以及其编码来获取对应的列信息
+      this.$http({
+        method: "get",
+        url: "/zuul/lmanage/dataSource/column",
+        params: {
+          id: this.formDataParent.dataSourceId,
+          entityGuid: guid,
+          tableName: tableName
+        }
+      }).then(res => {
+        if (this.sourceType == "2") {
+          if (res.data.data.success) {
+            this.sourceTableData = res.data.data.data.columns;
+            try {
+              this.$refs["vs-table"].scrollTo({ y: 0 }, 500);
+            } catch (error) {
+              console.log(error);
+            }
+            //获取对应表的列信息会返回entityDetailMap和relations分别对应的是血缘关系和血缘关系元数据详情
+            //如果为null,那么formData中对应的血缘关系也为null    PS:需要序列化为string在放入formData中
+            if (res.data.data.data.entityDetailMap == null) {
+              this.formData.rawLineageImpactPoint = null;
+            } else {
+              this.formData.rawLineageImpactPoint = JSON.stringify(
+                res.data.data.data.entityDetailMap
+              );
+            }
+            if (res.data.data.data.relations == null) {
+              this.formData.rawLineageImpact = null;
+            } else {
+              this.formData.rawLineageImpact = JSON.stringify(res.data.data.data.relations);
+            }
+            console.log(this.formData);
+            this.sourceTableLoading = false;
+          }else{
+            this.$message.error(res.data.data.message,2)
+            this.sourceTableLoading = false;
+            this.sourceTableData=[]
+          }
+        }else{
+          if(res.data.success){
+            this.sourceTableData = res.data.data.columns;
+            try {
+              this.$refs["vs-table"].scrollTo({ y: 0 }, 500);
+            } catch (error) {
+              console.log(error);
+            }
+            //获取对应表的列信息会返回entityDetailMap和relations分别对应的是血缘关系和血缘关系元数据详情
+            //如果为null,那么formData中对应的血缘关系也为null    PS:需要序列化为string在放入formData中
+            if (res.data.data.entityDetailMap == null) {
+              this.formData.rawLineageImpactPoint = null;
+            } else {
+              this.formData.rawLineageImpactPoint = JSON.stringify(
+                res.data.data.entityDetailMap
+              );
+            }
+            if (res.data.data.relations == null) {
+              this.formData.rawLineageImpact = null;
+            } else {
+              this.formData.rawLineageImpact = JSON.stringify(res.data.data.relations);
+            }
+            console.log(this.formData);
+            this.sourceTableLoading = false;
+          }
+        }
+      });
+    },
+    //当数据源类型(大数据/JDBC)发生改变时
+    sourceChange(value) {
+      //重置左边menu选中的表名为第一个
+      this.currentSelectedKey = ["0"];
+      this.searchTableName = "";
+      //过滤出当前选中的数据类型在数据类型字典中的那个数组
+      let arr = this.dataSourceList1.filter(item => {
+        return item.value == value;
+      });
+      //获取当前选中的数据类型为JDBC还是大数据
+      this.sourceType = arr[0].sourceType;
+      this.formData.originTypeName =
+        this.sourceType == "0" ? "hive_table" : this.sourceType == "1" ? null : "kafka";
+      //根据类型不同渲染响应的列
+      this.renderColumns();
+      //确认当前数据源类型切换
+      this.sourceChanged = true;
+      //重置勾选
+      this.selectedIds = [];
+      this.initIndex();
+      this.formData.columns = "";
+      //获取数据
+      this.getSourceTable();
+      //重置滚动条到顶
+      this.$refs["vs-table"].scrollTo({ y: 0 }, 500);
+    },
+    getSourceTable() {
+      this.sourceTableLoading = true;
+      //获取数据源下的表
+      this.$http({
+        method: "get",
+        url: "/zuul/lmanage/dataSource/table",
+        params: {
+          id: this.formDataParent.dataSourceId,
+          typeName: "hive_table"
+        }
+      })
+        .then(res => {
+          if (res.data.success) {
+            console.log("左边表名", res);
+            this.tableNameList = res.data.data;
+          } else {
+            // console.log(res);
+            this.$message.error(res.data.message, 2);
+            this.sourceTableLoading = false;
+          }
+        })
+        //获取玩数据源下的表之后获取选中的表对应的列信息
+        .then(res => {
+          //如果当前的formData中的id存在,如果存在 则为修改  并且不是更改数据源类型操作的情况下  也就是说修改按钮点进来 自动定位左边的tableName
+          if (this.formData.id) {
+            var tableName = this.formData.dataSourceFile;
+            //找到dataSourceFile(当前表名)在表名列表中对应的下标位置
+            let index = this.tableNameList.findIndex(item => {
+              // return item.tableName == JSON.parse(this.formData.columns)[0].tableName;
+              return item.tableName == this.formData.dataSourceFile;
+            });
+            console.log(this.tableNameList);
+            //被选中的那个key就是这个index下标
+            this.currentSelectedKey = [index + ""];
+            // console.log("当前选中的table", this.currentSelectedKey);
+            //找到对应的guid
+            var guid = this.tableNameList[index].guid;
+            this.formData.dataSourceFileGuid = guid;
+          } else {
+            //这是formData.id不存在的情况 则直接定位左边第一个tableName   或者做更改数据源类型操作是 也直接定位第一个tableName
+            var tableName = this.filterTableNameList[0].tableName;
+            // console.log(tableName);
+            var guid = this.filterTableNameList[0].guid;
+            this.formData.dataSourceFileGuid = guid;
+            this.formData.dataSourceFile = this.filterTableNameList[0].tableName;
+            let arr = this.dataSourceList1.filter(item => {
+              return item.value == this.formDataParent.dataSourceId;
+            });
+            // this.inputPre = arr[0].label + "_" + this.formData.dataSourceFile + "_";
+            // this.formData.fullName = this.inputPre + this.formData.name;
+            // this.$refs.formChild.inputPre = this.inputPre;
+            // this.formData.name = this.inputPre;
+            // this.$refs.formChild.formChild.name = this.inputPre;
+          }
+          //获取对应的tableName下的列信息
+          this.$http({
+            method: "get",
+            url: "/zuul/lmanage/dataSource/column",
+            params: {
+              id: this.formDataParent.dataSourceId,
+              entityGuid: guid,
+              tableName: tableName
+            }
+          }).then(res => {
+            console.log(res);
+            let arr = this.dataSourceList1.filter(item => {
+              return item.value == this.formDataParent.dataSourceId;
+            });
+            console.log(arr[0].sourceType);
+            if (arr[0].sourceType == "2") {
+              if (res.data.data.success) {
+                if (this.notEditable) {
+                  this.sourceTableData = JSON.parse(this.formData.columns);
+                } else {
+                  this.sourceTableData = res.data.data.data.columns;
+                }
+                console.log("table数据", this.sourceTableData);
+                // console.log("列数据", res);
+                //如果entityDetailMap为空 则formData中的rawLineageImpactPoint为空
+                if (res.data.data.entityDetailMap == null) {
+                  this.formData.rawLineageImpactPoint = null;
+                } else {
+                  //反之序列化 并且给血缘赋值
+                  this.formData.rawLineageImpactPoint = JSON.stringify(
+                    res.data.data.data.entityDetailMap
+                  );
+                }
+                //如果relations为空 则formData中的rawLineageImpact为空
+                if (res.data.data.data.relations == null) {
+                  this.formData.rawLineageImpact = null;
+                } else {
+                  //反之序列化 并且给血缘赋值
+                  this.formData.rawLineageImpact = JSON.stringify(res.data.data.data.relations);
+                }
+                //如果是修改操作,并且此条数据列信息有值
+                if (this.formData.id && this.formData.columns.length > 0 && !this.sourceChanged) {
+                  this.formData.columns = JSON.parse(this.formData.columns);
+                  var currentColumns = this.formData.columns;
+                  console.log(this.formData.columns);
+                  //找出此条数据的列信息在所有列信息的下标位置 并且放入勾选列表中  目的是点击修改 列信息表自动勾选
+                  for (var i = 0; i < this.sourceTableData.length; i++) {
+                    for (var j = 0; j < currentColumns.length; j++) {
+                      if (this.sourceTableData[i].columnName == currentColumns[j].columnName) {
+                        this.selectedIds.push(i);
+                        this.sourceTableData[i].comment = currentColumns[j].comment;
+                        this.sourceTableData[i].selected = true;
+                        // currentColumns[j].tableName = this.$refs.formChild.formChild.name;
+                        // this.sourceTableData[i].typeName = currentColumns[j].typeName;
+                        currentColumns[j].typeName = this.sourceTableData[i].typeName;
+                      }
+                    }
+                  }
+                  // console.log(this.selectedIds);
+                }
+                this.sourceTableLoading = false;
+              } else {
+                this.$message.error(res.data.data.message, 2);
+                this.sourceTableLoading = false;
+                this.sourceTableData=[]
+              }
+            } else {
+              if (res.data.success) {
+                if (this.notEditable) {
+                  this.sourceTableData = JSON.parse(this.formData.columns);
+                } else {
+                  this.sourceTableData = res.data.data.columns;
+                }
+                console.log("table数据", this.sourceTableData);
+                // console.log("列数据", res);
+                //如果entityDetailMap为空 则formData中的rawLineageImpactPoint为空
+                if (arr[0].sourceType != "3") {
+                  if (res.data.data.entityDetailMap == null) {
+                    this.formData.rawLineageImpactPoint = null;
+                  } else {
+                    //反之序列化 并且给血缘赋值
+                    this.formData.rawLineageImpactPoint = JSON.stringify(
+                      res.data.data.entityDetailMap
+                    );
+                  }
+                  //如果relations为空 则formData中的rawLineageImpact为空
+                  if (res.data.data.relations == null) {
+                    this.formData.rawLineageImpact = null;
+                  } else {
+                    //反之序列化 并且给血缘赋值
+                    this.formData.rawLineageImpact = JSON.stringify(res.data.data.relations);
+                  }
+                } else {
+                  if (res.data.data.data.entityDetailMap == null) {
+                    this.formData.rawLineageImpactPoint = null;
+                  } else {
+                    //反之序列化 并且给血缘赋值
+                    this.formData.rawLineageImpactPoint = JSON.stringify(
+                      res.data.data.data.entityDetailMap
+                    );
+                  }
+                  //如果relations为空 则formData中的rawLineageImpact为空
+                  if (res.data.data.data.relations == null) {
+                    this.formData.rawLineageImpact = null;
+                  } else {
+                    //反之序列化 并且给血缘赋值
+                    this.formData.rawLineageImpact = JSON.stringify(res.data.data.data.relations);
+                  }
+                }
+                //如果是修改操作,并且此条数据列信息有值
+                if (this.formData.id && this.formData.columns.length > 0 && !this.sourceChanged) {
+                  this.formData.columns = JSON.parse(this.formData.columns);
+                  var currentColumns = this.formData.columns;
+                  console.log(this.formData.columns);
+                  //找出此条数据的列信息在所有列信息的下标位置 并且放入勾选列表中  目的是点击修改 列信息表自动勾选
+                  for (var i = 0; i < this.sourceTableData.length; i++) {
+                    for (var j = 0; j < currentColumns.length; j++) {
+                      if (this.sourceTableData[i].columnName == currentColumns[j].columnName) {
+                        this.selectedIds.push(i);
+                        this.sourceTableData[i].comment = currentColumns[j].comment;
+                        this.sourceTableData[i].selected = true;
+                        // currentColumns[j].tableName = this.$refs.formChild.formChild.name;
+                        // this.sourceTableData[i].typeName = currentColumns[j].typeName;
+                        currentColumns[j].typeName = this.sourceTableData[i].typeName;
+                      }
+                    }
+                  }
+                  // console.log(this.selectedIds);
+                }
+              }
+              this.sourceTableLoading = false;
+            }
+          });
+        });
+    },
+    //列信息表的勾选操作
+    onSelectChange(index) {
+      // 已选择的所有列信息的下标位置的数组
+      this.selectedIds = index;
+      let arr = [];
+      //遍历数组,拿到对应的数据,放入arr中
+      for (let i = 0; i < this.selectedIds.length; i++) {
+        let record = this.sourceTableData[this.selectedIds[i]];
+        arr.push(record);
+      }
+      // console.log(JSON.stringify(arr));
+      //序列化arr数组,并且保存到formData中
+      this.formData.columns = arr;
+      // console.log(this.formData.columns);
+      console.log(arr);
+    },
+    save() {
+      // console.log(123);
+      this.$refs.form.validate(valid => {
+        if (valid) {
+          if (this.notEditable) {
+            this.btnLoading = true;
+            this.$refs.formChild.formChild.version = this.formData.version;
+            this.$refs.formChild.formChild.id = this.formData.id;
+            this.$refs.formChild.formChild.classificationNames = this.$refs.formChild.formChild.classificationNames.join(
+              ","
+            );
+            try {
+              this.$refs.formChild.formChild.assetCatalogIds = this.formDataParent.assetCatalogId.join(
+                ","
+              );
+            } catch (error) {}
+            console.log(this.$refs.formChild.formChild);
+            this.$refs.formChild.formChild.esColumns = JSON.stringify(
+              this.$refs.formChild.formChild
+            );
+            this.$http({
+              method: "post",
+              data: this.$refs.formChild.formChild,
+              headers: {
+                "Content-Type": "application/json"
+              },
+              url: "/zuul/lmanage/dataEntity/updateBasic"
+            }).then(res => {
+              if (res.data.success) {
+                this.$notification.success({
+                  message: "操作成功",
+                  duration: 2
+                });
+                this.renderTable();
+                this.drawerEdit = false;
+              } else {
+                this.$notification.error({
+                  message: "操作失败",
+                  duration: 2
+                });
+                this.$refs.formChild.formChild.classificationNames = this.$refs.formChild.formChild.classificationNames.split(
+                  ","
+                );
+              }
+              this.btnLoading = false;
+            });
+          } else {
+            this.btnLoading = true;
+            if (this.formData.columns == "") {
+              this.formData.columns = "";
+              this.$message.error("请至少勾选一项", 2);
+              this.btnLoading = false;
+            } else if (this.$refs.formChild.idValue.length == 0 && this.createIndex) {
+              this.$message.error("请至少选择一个索引字段");
+              this.btnLoading = false;
+            } else if(this.$refs.formChild.accurateValue.length == 0 && this.createIndex &&this.$refs.formChild.blurryValue.length == 0){
+              this.$message.error("请至少选择一个模糊索引或者精确索引")
+              this.btnLoading = false;
+            }else {
+              this.$refs.formChild.$children[0].validate(valid => {
+                this.btnLoading = true;
+                // console.log(this.formData.columns);
+                // console.log(this.createIndex, this.saveErr);
+                this.$refs.formChild.formChild.esColumns = [];
+                if (valid) {
+                  if (this.createIndex && this.saveErr == false) {
+                    //将表单页面选择的模糊索引,精确索引,索引字段放入esColumns中
+                    this.$refs.formChild.accurateValue.forEach(item => {
+                      this.$refs.formChild.formChild.esColumns.push({
+                        columnName: item,
+                        searchType: "1"
+                      });
+                    });
+                    this.$refs.formChild.blurryValue.forEach(item => {
+                      this.$refs.formChild.formChild.esColumns.push({
+                        columnName: item,
+                        searchType: "0"
+                      });
+                    });
+                    if (this.$refs.formChild.idValue.length > 0) {
+                      console.log(this.$refs.formChild.idValue);
+                      this.$refs.formChild.idValue.forEach(item => {
+                        this.$refs.formChild.id = this.$refs.formChild.id + item + ",";
+                      });
+                      this.$refs.formChild.id = this.$refs.formChild.id.substr(
+                        0,
+                        this.$refs.formChild.id.length - 1
+                      );
+                      this.$refs.formChild.formChild.esColumns.push({
+                        columnName: "ROWKEY",
+                        isKey: true,
+                        elements: this.$refs.formChild.id,
+                        Joiner: "_"
+                      });
+                    }
+                  }
+                  // console.log(this.$refs.formChild.formChild.esColumns);
+                  console.log(this.$refs.formChild.formChild);
+                  this.formData.esColumns = this.$refs.formChild.formChild.esColumns;
+                  this.formData = Object.assign(this.formData, this.$refs.formChild.formChild);
+                  this.formData.classificationNames = this.formData.classificationNames.join(",");
+                  try {
+                    this.formData.assetCatalogIds = this.formDataParent.assetCatalogId.join(",");
+                  } catch (error) {}
+                  this.formData.columns.forEach(item => {
+                    this.$delete(item, "selected");
+                  });
+                  this.formData.columns.forEach(item => {
+                    item.tableName = this.$refs.formChild.formChild.name;
+                  });
+                  this.formData.columns = JSON.stringify(this.formData.columns);
+                  if (this.formData.esColumns.length == 0) {
+                    this.formData.esColumns = "";
+                  } else {
+                    this.formData.esColumns = JSON.stringify(this.formData.esColumns);
+                  }
+                  this.formData.dataSourceId = this.formDataParent.dataSourceId;
+                  console.log(this.formData);
+                  this.$http({
+                    method: "post",
+                    headers: {
+                      "Content-Type": "application/json"
+                    },
+                    data: this.formData,
+                    url: "/zuul/lmanage/dataEntity/save",
+                    timeout: 60000
+                  }).then(res => {
+                    if (res.data.success) {
+                      this.$notification.success({
+                        message: "操作成功",
+                        duration: 2
+                      });
+                      this.renderTable();
+                      this.drawerEdit = false;
+                      this.btnLoading = false;
+                      this.$refs.cascader.sValue = [];
+                      this.inputPre = "";
+                    } else {
+                      this.$notification.error({
+                        message: "操作失败",
+                        duration: 2
+                      });
+                      this.formData.columns = JSON.parse(this.formData.columns);
+                      if (this.formData.esColumns.length > 0 && this.formData.esColumns != "") {
+                        this.formData.esColumns = JSON.parse(this.formData.esColumns);
+                      }
+                      this.saveErr = true;
+                      this.formData.classificationNames = this.formData.classificationNames.split(
+                        ","
+                      );
+                      this.btnLoading = false;
+                    }
+                  });
+                } else {
+                  this.btnLoading = false;
+                }
+              });
+            }
+          }
+        }
+      });
+    },
+    //表单重置
+    resetFields() {
+      try {
+        this.$refs.formChild.$children[0].resetFields();
+      } catch (e) {
+        // console.log(e);
+      }
+    },
+    //左边tableName的menu自动滚动到指定位置
+    scrollMenu() {
+      try {
+        //如果不是前面12个,则滚动到ID位置  ID是动态绑定的 只有选中的tableName才有ID,否则不滚动
+        if (this.currentSelectedKey.toString() * 1 > 12) {
+          this.$refs["vs"].scrollIntoView("#menu", 500);
+        } else {
+          this.$refs["vs"].scrollTo(
+            {
+              y: 0
+            },
+            500
+          );
+        }
+      } catch (error) {}
+    },
+    //列信息表自动滚动到勾选的位置
+    scrollTable() {
+      try {
+        //如果勾选得列表的最后一条数据的下标位置大于12  则滚动到y轴此下标*30的位置
+        if (this.selectedIds[this.selectedIds.length - 1] > 12 && !this.notEditable) {
+          this.$refs["vs-table"].scrollTo(
+            {
+              y: this.selectedIds[this.selectedIds.length - 1] * 30
+            },
+            500
+          );
+        }
+      } catch (error) {
+        console.log(error);
+      }
+    },
+    //动态渲染列信息表的列
+    renderColumns() {
+      //如果是大数据,列信息的列是以下,否则...
+      if (this.sourceType == "0") {
+        this.sourceTableColumns = [
+          {
+            dataIndex: "columnName",
+            title: "列名",
+            align: "center"
+          },
+          {
+            dataIndex: "columnGuid",
+            title: "标识",
+            align: "center",
+            scopedSlots: { customRender: "guid" }
+          },
+          {
+            dataIndex: "typeName",
+            title: "类型名",
+            align: "center"
+          },
+          {
+            dataIndex: "comment",
+            title: "备注",
+            align: "center",
+            scopedSlots: { customRender: "comments" },
+            width: "30%"
+          }
+        ];
+      } else {
+        this.sourceTableColumns = [
+          {
+            dataIndex: "columnName",
+            title: "列名",
+            align: "center"
+          },
+          {
+            dataIndex: "typeName",
+            title: "类型名",
+            align: "center"
+          },
+          {
+            dataIndex: "tableCatalog",
+            title: "实例名",
+            align: "center",
+            customRender: text => (text ? text : "无")
+          },
+          {
+            dataIndex: "comment",
+            title: "备注",
+            align: "center",
+            scopedSlots: { customRender: "comments" },
+            width: "30%"
+          }
+        ];
+      }
+    },
+    searchTableChange() {
+      if (this.searchTableName) {
+        if (this.filterTableNameList.length > 0) {
+          this.sourceTableLoading = true;
+          let index = this.currentSelectedKey.toString();
+          let tableName = this.filterTableNameList[index].tableName;
+          let guid = this.filterTableNameList[index].guid;
+          this.$http({
+            method: "get",
+            url: "/zuul/lmanage/dataSource/column",
+            params: {
+              id: this.formDataParent.dataSourceId,
+              entityGuid: guid,
+              tableName: tableName
+            }
+          }).then(res => {
+            let arr = this.dataSourceList1.filter(item => {
+              return item.value == this.formDataParent.dataSourceId;
+            });
+            if (arr[0].sourceType == "2") {
+              if (res.data.data.success) {
+                this.sourceTableData = res.data.data.data.columns;
+                if (res.data.data.entityDetailMap == null) {
+                  this.formData.rawLineageImpactPoint = null;
+                } else {
+                  //反之序列化 并且给血缘赋值
+                  this.formData.rawLineageImpactPoint = JSON.stringify(
+                    res.data.data.data.entityDetailMap
+                  );
+                }
+                //如果relations为空 则formData中的rawLineageImpact为空
+                if (res.data.data.data.relations == null) {
+                  this.formData.rawLineageImpact = null;
+                } else {
+                  //反之序列化 并且给血缘赋值
+                  this.formData.rawLineageImpact = JSON.stringify(res.data.data.relations);
+                }
+                this.sourceTableLoading = false;
+              } else {
+                this.$message.error(res.data.data.message, 2);
+                this.sourceTableLoading = false;
+                this.sourceTableData=[]
+              }
+            } else {
+              if (res.data.success) {
+                this.sourceTableData = res.data.data.columns;
+                if (res.data.data.entityDetailMap == null) {
+                  this.formData.rawLineageImpactPoint = null;
+                } else {
+                  //反之序列化 并且给血缘赋值
+                  this.formData.rawLineageImpactPoint = JSON.stringify(
+                    res.data.data.entityDetailMap
+                  );
+                }
+                //如果relations为空 则formData中的rawLineageImpact为空
+                if (res.data.data.relations == null) {
+                  this.formData.rawLineageImpact = null;
+                } else {
+                  //反之序列化 并且给血缘赋值
+                  this.formData.rawLineageImpact = JSON.stringify(res.data.data.relations);
+                }
+                console.log(this.formData);
+              }
+              this.sourceTableLoading = false;
+            }
+          });
+        } else {
+          this.sourceTableData = [];
+          this.$refs.formChild.formChild.name = "";
+          this.$refs.formChild.flag = true;
+        }
+      } else {
+        this.getSourceTable();
+        this.currentSelectedKey = ["0"];
+      }
+    },
+    check(record) {
+      // console.log(record.comment);
+      let index = this.formData.columns.findIndex(item => {
+        return item.columnName == record.columnName;
+      });
+      this.formData.columns[index].comment = record.comment;
+      console.log(this.formData.columns);
+      record.editable = false;
+      this.$delete(record, "editable");
+      // this.$delete(record, "selected");
+      console.log(this.formData.columns);
+    },
+    editComment(record) {
+      console.log(123);
+      this.$set(record, "editable", true);
+      // record.editable = true;
+      console.log(record.editable);
+    },
+    onSelect(record, selected, selectedRows) {
+      console.log(record);
+      if (selected) {
+        record.selected = true;
+        record.tableName = this.$refs.formChild.formChild.name;
+        this.$refs.formChild.indexList.push(record.columnName);
+        this.$refs.formChild.splicingId.push(record.columnName);
+      } else {
+        this.$set(record, "editable", false);
+        // record.editable = false;
+        record.selected = false;
+        this.$delete(record, "editable");
+        this.$delete(record, "selected");
+        //勾选列信息之后,需将对应字段添加到 模糊,精确,索引字段中,并且要识别已有的,避免重复push
+        let index = this.$refs.formChild.indexList.findIndex(item => {
+          return item == record.columnName;
+        });
+        if (index != -1) {
+          this.$refs.formChild.indexList.splice(index, 1);
+        }
+        let index1 = this.$refs.formChild.accurateValue.findIndex(item => {
+          return item == record.columnName;
+        });
+        if (index1 != -1) {
+          this.$refs.formChild.accurateValue.splice(index1, 1);
+        }
+        let index2 = this.$refs.formChild.blurryValue.findIndex(item => {
+          return item == record.columnName;
+        });
+        if (index2 != -1) {
+          this.$refs.formChild.blurryValue.splice(index2, 1);
+        }
+        let index_id = this.$refs.formChild.splicingId.findIndex(item => {
+          return item == record.columnName;
+        });
+        this.$refs.formChild.splicingId.splice(index_id, 1);
+        let index_id_value = this.$refs.formChild.idValue.findIndex(item => {
+          return item == record.columnName;
+        });
+        if (index_id_value != -1) {
+          this.$refs.formChild.idValue.splice(index_id_value, 1);
+        }
+        let index_idShow = this.$refs.formChild.idShow.findIndex(item => {
+          return item == `{${record.columnName}}`;
+        });
+        if (index_idShow != -1) {
+          this.$refs.formChild.idShow.splice(index_idShow, 1);
+          console.log(this.$refs.formChild.idShow);
+        }
+      }
+    },
+    onSelectAll(selected, selectedRows, changeRows) {
+      console.log(selectedRows);
+      changeRows.forEach(item => {
+        item.selected = selected;
+        item.tableName = this.$refs.formChild.formChild.name;
+      });
+      if (selectedRows.length > 0) {
+        //全选列信息要将字段push到表单页面多选数组中,并且要识别已存在的字段,并且删除已存在的
+        this.$refs.formChild.indexList = [];
+        this.$refs.formChild.splicingId = [];
+        selectedRows.forEach(item => {
+          this.$refs.formChild.indexList.push(item.columnName);
+          this.$refs.formChild.splicingId.push(item.columnName);
+        });
+        this.$refs.formChild.accurateValue.forEach(item => {
+          this.$refs.formChild.indexList.forEach((item1, index) => {
+            if (item == item1) {
+              this.$refs.formChild.indexList.splice(index, 1);
+            }
+          });
+        });
+        this.$refs.formChild.blurryValue.forEach(item => {
+          this.$refs.formChild.indexList.forEach((item1, index) => {
+            if (item == item1) {
+              this.$refs.formChild.indexList.splice(index, 1);
+            }
+          });
+        });
+      } else {
+        //如果取消全部勾选,那么需要清空表单页面的各个数组
+        this.$refs.formChild.indexList = [];
+        this.$refs.formChild.splicingId = [];
+        this.$refs.formChild.idValue = [];
+        this.$refs.formChild.blurryValue = [];
+        this.$refs.formChild.accurateValue = [];
+        this.$refs.formChild.idShow = [];
+        this.$refs.formChild.esColumns = [];
+      }
+    },
+    del(row, record) {
+      console.log(row.id);
+      console.log(record);
+      this.$confirm({
+        title: "提示",
+        content: "确认删除此条元数据?",
+        okText: "确认",
+        okType: "danger",
+        oncancelText: "取消",
+        onOk: () => {
+          this.$set(record, "deloading", true);
+          //先发送一个请求,获取此条元数据是否可删除,如果不可以 抛出后端返回的信息.
+          this.$http({
+            params: {
+              operate: "delete"
+            },
+            url: `/zuul/lmanage/dataEntity/useSate/${row.id}`,
+            method: "get"
+          }).then(res => {
+            // console.log(res);
+            if (res.data.success) {
+              if (res.data.data.isUsed) {
+                this.$notification.error({
+                  message: res.data.data.message,
+                  duration: 2
+                });
+                this.$set(record, "deloading", false);
+              } else {
+                this.$http.delete(`/zuul/lmanage/dataEntity/delete/${row.id}`).then(res => {
+                  if (res.data.success) {
+                    this.$notification.success({
+                      message: "删除成功",
+                      duration: 2
+                    });
+                    this.searchConditions.page = GetPageByDelete(
+                      this.searchConditions.page,
+                      this.tableData.length,
+                      1
+                    );
+                    this.renderTable();
+                    this.$set(record, "deloading", false);
+                  } else {
+                    this.$notification.error({
+                      message: "删除失败",
+                      duration: 2
+                    });
+                    this.$set(record, "deloading", false);
+                  }
+                });
+              }
+            } else {
+              this.$notification.success({
+                message: res.data.data,
+                duration: 2
+              });
+              this.$set(record, "deloading", false);
+            }
+          });
+        }
+      });
+    },
+    createIndexF(params) {
+      this.createIndex = params;
+      console.log(this.createIndex);
+    },
+    initIndex() {
+      try {
+        this.$refs.formChild.formChild.createIndex = false;
+        this.$refs.formChild.indexList = [];
+        this.$refs.formChild.splicingId = [];
+        this.$refs.formChild.accurateValue = [];
+        this.$refs.formChild.blurryValue = [];
+        this.$refs.formChild.idValue = [];
+        this.$refs.formChild.idShow = [];
+        this.$refs.formChild.id = "";
+      } catch (error) {}
+    },
+    getCatalogList() {
+      this.$http.get("/zuul/lmanage/asset/parent/cascader").then(res => {
+        this.catalogList.push(res.data.data[2]);
+        console.log(res.data.data);
+      });
+    },
+    //递归获取子节点
+    getNodeId(list, newNodeId = []) {
+      for (let i in list) {
+        newNodeId.push(list[i]);
+        if (list[i].children) {
+          this.getNodeId(list[i].children, newNodeId);
+        }
+      }
+      return newNodeId;
+    },
+    //渲染表格的目录字段
+    renderCatalogText(text) {
+      let a = this.getNodeId(this.catalogList);
+      // console.log(a);
+      text = text.split(",");
+      var str = "";
+      a.forEach(item => {
+        text.forEach(item1 => {
+          if (item.value == item1) {
+            str += item.label + "/";
+          }
+        });
+      });
+      str = str.substr(0, str.length - 1);
+      return str;
+    },
+    renderDataSourceFile(id) {
+      let text = "";
+      this.dataSourceList.forEach(item => {
+        if (item.value == id) {
+          text = item.label;
+        }
+      });
+      return text;
+    },
+    timeChange(date, dateString) {
+      console.log(date, dateString);
+      console.log(this.date);
+      this.searchConditions.beginTime = this.date[0];
+      this.searchConditions.endTime = this.date[1];
+      console.log(
+        "开始时间:" + this.searchConditions.beginTime,
+        "结束时间:" + this.searchConditions.endTime
+      );
+    },
+    handleReset() {
+      this.searchConditions.name = "";
+      this.date = [];
+      this.searchConditions.aliases = "";
+      this.searchConditions.dataSourceId = undefined;
+      this.searchConditions.beginTime = "";
+      this.searchConditions.endTime = "";
+    },
+    catalogChange(value, selectOptions) {
+      console.log(value, selectOptions);
+      this.selectOptions = selectOptions;
+      if (!this.formData.id && !this.$refs.formChild.inputSelf) {
+        if (selectOptions == undefined) {
+          this.inputPre = "";
+          this.$refs.formChild.inputPre = this.inputPre;
+          this.formData.name = this.inputPre;
+          this.$refs.formChild.formChild.name = this.inputPre;
+        }
+      }
+    },
+    catalogBlur() {
+      if (!this.formData.id && !this.$refs.formChild.inputSelf) {
+        this.inputPre = "";
+        if (this.selectOptions.length > 0) {
+          this.selectOptions.forEach(item => {
+            this.inputPre += pinyin.getCamelChars(item.label) + "_";
+          });
+          this.$refs.formChild.inputPre = this.inputPre;
+          this.formData.name = this.inputPre;
+          this.$refs.formChild.formChild.name = this.inputPre;
+          console.log(this.$refs.formChild.formChild.name);
+        }
+      }
+    }
+  },
+  mounted() {
+    this.renderTable();
+    this.renderDataSourceDict();
+    this.$http({
+      method: "get",
+      url: "/zuul/lmanage/dataWarehouse/page"
+    }).then(res => {
+      console.log("数据仓库", res.data.data.results[0]);
+      if (res.data.data.results[0].typeName == "hive") {
+        this.isHive = "hive";
+      }
+    });
+    this.getCatalogList();
+  },
+  updated() {
+    this.scrollMenu();
+    this.scrollTable();
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    },
+    //根据表名过滤
+    filterTableNameList() {
+      return this.tableNameList.filter(k => {
+        return k.tableName.toUpperCase().match(this.searchTableName.toUpperCase());
+      });
+    }
+  },
+  components: {
+    Form
+  }
+};
+</script>
+
+<style scoped lang="less">
+/deep/.odd {
+  background-color: rgba(240, 240, 240, 1);
+}
+/deep/.even {
+  background-color: rgba(255, 255, 255, 1);
+}
+.ant-layout-sider {
+  background-color: #fff;
+}
+/deep/ .contentTable .ant-table {
+  margin-top: 0px;
+  margin-left: 0px;
+  height: 600px;
+  border: none;
+}
+.footer {
+  border-top: 2px solid;
+  width: 100%;
+  text-align: right;
+  margin-top: 100px;
+  padding: 20px;
+}
+.table-content {
+  border: 1px solid #eee;
+  border-left: 2px solid #eee;
+  width: 70%;
+}
+.table-search {
+  margin-bottom: 20px;
+  margin-left: 20px;
+  /deep/ .ant-form {
+    transform: translateX(-18px);
+  }
+}
+/deep/.ant-layout-sider-children {
+  border: 2px solid #eee;
+  border-left: none;
+}
+
+.content {
+  display: flex;
+}
+.form-content {
+  width: 30%;
+  margin-left: 40px;
+}
+.table-content {
+  .ant-menu-vertical .ant-menu-item:not(:last-child) {
+    border-bottom: 1px solid #eee;
+    margin: 0px;
+  }
+}
+.search-tableName {
+  margin: 10px 0;
+  color: #e8e8e8;
+  /deep/ .ant-input-affix-wrapper .ant-input-prefix {
+    transform: translate(-9px, -40%);
+  }
+  /deep/ .ant-input {
+    border: none;
+    border-bottom: 1px solid rgb(88, 86, 86);
+    font-size: 12px;
+    border-radius: 0;
+    outline: 0;
+    /deep/ &:hover {
+      border-color: rgb(88, 86, 86);
+    }
+    /deep/ &:focus {
+      outline: 0;
+      box-shadow: none;
+    }
+  }
+}
+.columns-details-title {
+  margin: 20px 0px;
+  /deep/ .ant-table-title {
+    font-weight: 900;
+    font-size: 16px;
+  }
+}
+/deep/ .ant-tooltip .ant-tooltip-placement-top {
+  .ant-tooltip-content {
+    .ant-tooltip-inner {
+      width: 240px;
+      color: gray;
+      background-color: rgba(232, 232, 232, 0.6) !important;
+    }
+  }
+}
+.inputPre {
+  position: absolute;
+  top: 0px;
+  left: 10px;
+}
+.ant-input.name {
+  background: transparent;
+}
+.contentTable .editable-cell {
+  position: relative;
+}
+
+.contentTable .editable-cell-input-wrapper,
+.contentTable .editable-cell-text-wrapper {
+  padding-right: 24px;
+}
+
+.contentTable .editable-cell-text-wrapper {
+  padding: 5px 24px 5px 5px;
+}
+
+.contentTable .editable-cell-icon,
+.contentTable .editable-cell-icon-check {
+  position: absolute;
+  right: 0;
+  top: 5px;
+  width: 20px;
+  cursor: pointer;
+}
+
+.contentTable .editable-cell-icon {
+  line-height: 18px;
+  // display: none;
+}
+
+.contentTable .editable-cell-icon-check {
+  line-height: 28px;
+}
+
+.contentTable .editable-cell-icon:hover,
+.contentTable .editable-cell-icon-check:hover {
+  color: #108ee9;
+}
+
+.contentTable .editable-add-btn {
+  margin-bottom: 8px;
+}
+/deep/ .des.ant-descriptions-bordered .ant-descriptions-view {
+  width: 100%;
+  height: 40px;
+}
+</style>
+<style>
+.colunm-tooltip .ant-tooltip-inner {
+  width: 300px;
+  text-align: center;
+}
+.prompt {
+  color: red;
+  font-size: 18px;
+}
+.eidtForm {
+  display: flex;
+  justify-content: space-around;
+}
+</style>

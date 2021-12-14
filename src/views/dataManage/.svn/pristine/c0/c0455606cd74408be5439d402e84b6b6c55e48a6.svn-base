@@ -1,0 +1,1252 @@
+<template>
+  <div class="standardMap" :style="'height:' + bodyHeight + 'px'">
+    <!-- 目录 -->
+    <div class="catalog">
+      <!-- 目录标题 -->
+      <div class="bar">
+        <span>
+          <a-input-search
+            v-model="searchStr"
+            placeholder="输入目录名"
+            @search="onSearch"
+          ></a-input-search>
+        </span>
+      </div>
+      <a-spin :spinning="treeLoading">
+        <vue-scroll :style="'height:' + (bodyHeight - 120) + 'px'">
+          <div class="tree" :style="'height:' + (bodyHeight - 130) + 'px'">
+            <a-tree
+              v-model="checkedKeys"
+              :treeData="treeSource"
+              :selectedKeys="selectedKeys"
+              :expandedKeys="expandedKeys"
+              @expand="onExpand"
+              :autoExpandParent="autoExpandParent"
+              :replaceFields="replaceFields"
+              @select="onSelect"
+              @onCheck="onCheck"
+              show-line
+            >
+              <template slot="custom" slot-scope="item">
+                <span
+                  v-html="
+                    item.name.replace(
+                      new RegExp(searchValue, 'g'),
+                      '<span style=color:#f50>' + searchValue + '</span>'
+                    )
+                  "
+                  class="catalog_title"
+                ></span>
+              </template>
+            </a-tree>
+          </div>
+        </vue-scroll>
+      </a-spin>
+    </div>
+    <div class="table">
+      <div class="les-table-toolbar">
+        <a-button-group>
+          <a-button
+            type="primary"
+            icon="deployment-unit"
+            @click="standardMapping"
+            style="margin-right: 5px"
+          >
+            标准映射
+          </a-button>
+          <!-- <a-tooltip>
+            <template slot="title">
+              命中字段：字段名或字段中文名和数据标准相同,其他属性不同的字段
+            </template>
+            <a-icon type="question-circle" />
+          </a-tooltip> -->
+        </a-button-group>
+        <div>
+          <a-input
+            placeholder="名称"
+            :maxLength="10"
+            style="width: 150px; margin-right: 5px"
+            allowClear
+            @change="nameChange"
+            v-model="searchConditions.name"
+          >
+            <a-icon slot="suffix" type="search" />
+          </a-input>
+        </div>
+      </div>
+      <vue-scroll :style="'height:' + (bodyHeight - 150) + 'px;'">
+        <a-table
+          style="width: 100%"
+          :columns="columns"
+          :data-source="tableData"
+          :pagination="false"
+          size="small"
+          :rowKey="(record) => record.name"
+          :loading="tableLoading"
+        >
+          <template slot="action" slot-scope="text, record">
+            <a-button type="primary" size="small" @click="showResult(record)"
+              >映射结果</a-button
+            >
+          </template>
+        </a-table>
+      </vue-scroll>
+      <a-pagination
+        :defaultPageSize="20"
+        style="text-align: right; margin: 10px"
+        :showQuickJumper="this.total > 20"
+        :show-total="(total) => `共 ${total} 条`"
+        :total="total"
+        @change="pageChange"
+        :current="currentPage"
+      >
+      </a-pagination>
+      <a-modal v-model="addVisible" :title="modalTitle" :maskClosable="false">
+        <template slot="footer">
+          <a-button @click="addCancel"> 返回 </a-button>
+          <a-button type="primary" @click="startMapping" :loading="btnLoading">
+            确定
+          </a-button>
+        </template>
+        <a-form-model
+          layout="horizontal"
+          :label-col="{ span: 6 }"
+          :wrapper-col="{ span: 14 }"
+          :model="formData"
+          :rules="ruleValidate"
+          ref="formModel"
+        >
+          <a-form-model-item label="选择目录">
+            <a-tree-select
+              v-model="formData.catalogValue"
+              style="width: 100%"
+              :tree-data="treeDataSelect"
+              tree-checkable
+              :show-checked-strategy="SHOW_PARENT"
+              search-placeholder="Please select"
+              :showSearch="false"
+              placeholder="请先选择目录"
+              treeNodeFilterProp="title"
+              @change="changeCatalog"
+            />
+          </a-form-model-item>
+          <a-form-model-item label="选择标准" prop="selectedStandard">
+            <a-select
+              mode="multiple"
+              placeholder="选择目录后方选择数据标准"
+              v-model="formData.selectedStandard"
+              @change="standardChange"
+              labelInValue
+              @deselect="deselectValue"
+              @select="selectValue"
+            >
+              <a-select-option
+                v-for="item in options"
+                :key="item.value"
+                :value="item.value"
+                :filter-option="filterOption"
+              >
+                {{ item.label }}
+              </a-select-option>
+            </a-select>
+          </a-form-model-item>
+        </a-form-model>
+      </a-modal>
+      <div class="resultModal">
+        <a-modal v-model="resultVisible" :title="resultTitle" width="80%">
+          <template slot="footer">
+            <a-button @click="closeResultModal" type="primary"> 确定 </a-button>
+          </template>
+          <a-tabs v-model="tabKey">
+            <a-tab-pane key="1" tab="匹配字段">
+              <div class="les-table-toolbar">
+                <div>
+                  <a-input
+                    placeholder="名称"
+                    :maxLength="10"
+                    style="width: 150px; margin-right: 5px"
+                    allowClear
+                    @change="matchNameChange"
+                    v-model="searchMatch.fieldName"
+                  />
+                </div>
+                <a-button-group>
+                  <a-button type="primary" icon="tool"> 一键维护 </a-button>
+                </a-button-group>
+              </div>
+              <vue-scroll style="height: 500px">
+                <a-table
+                :loading="matchTableLoading"
+                  :columns="matchColumn"
+                  :data-source="matchTable"
+                  :pagination="false"
+                  style="height: 500px"
+                  :rowKey="(record) => record.id"
+                  size="small"
+                >
+                  <template slot="action">
+                    <a-button type="primary" size="small">绑定</a-button>
+                  </template>
+                </a-table>
+              </vue-scroll>
+              <div class="page">
+                <a-pagination
+                  :defaultPageSize="20"
+                  style="text-align: right; margin: 10px"
+                  :showQuickJumper="this.matchTotal > 20"
+                  :show-total="(matchTotal) => `共 ${matchTotal} 条`"
+                  :total="matchTotal"
+                  @change="matchPageChange"
+                  :current="matchCurrentPage"
+                >
+                </a-pagination>
+              </div>
+            </a-tab-pane>
+            <a-tab-pane key="2" tab="命中字段">
+              <div class="les-table-toolbar">
+                <div>
+                  <a-input
+                    placeholder="名称"
+                    :maxLength="10"
+                    style="width: 150px"
+                    allowClear
+                    @change="hitNameChange"
+                    v-model="searchHit.fieldName"
+                  />
+                </div>
+                <a-button-group>
+                  <a-button type="primary" icon="tool"> 一键维护 </a-button>
+                </a-button-group>
+              </div>
+              <vue-scroll style="height: 500px">
+                <a-table
+                  :loading="hitTableLoading"
+                  :columns="matchColumn"
+                  :data-source="hitTable"
+                  :pagination="false"
+                  style="height: 500px"
+                  :rowKey="(record) => record.id"
+                  size="small"
+                >
+                <template slot="action">
+                    <a-button type="primary" size="small">绑定</a-button>
+                  </template>
+                </a-table>
+              </vue-scroll>
+              <a-pagination
+                :defaultPageSize="20"
+                style="text-align: right; margin: 10px"
+                :showQuickJumper="this.hitTotal > 20"
+                  :show-total="(hitTotal) => `共 ${hitTotal} 条`"
+                  :total="hitTotal"
+                  @change="hitPageChange"
+                  :current="hitCurrentPage"
+              >
+              </a-pagination>
+            </a-tab-pane>
+          </a-tabs>
+        </a-modal>
+      </div>
+    </div>
+  </div>
+</template>
+
+<script>
+const url = "/zuul/lmanage/dataStandard";
+import { TreeSelect } from "ant-design-vue";
+const SHOW_PARENT = TreeSelect.SHOW_PARENT;
+const treeDataSelect = [
+  {
+    title: "Node1",
+    value: "0-0",
+    key: "0-0",
+    children: [
+      {
+        title: "Child Node1",
+        value: "0-0-0",
+        key: "0-0-0",
+      },
+    ],
+  },
+  {
+    title: "Node2",
+    value: "0-1",
+    key: "0-1",
+    children: [
+      {
+        title: "Child Node3",
+        value: "0-1-0",
+        key: "0-1-0",
+      },
+      {
+        title: "Child Node4",
+        value: "0-1-1",
+        key: "0-1-1",
+      },
+      {
+        title: "Child Node5",
+        value: "0-1-2",
+        key: "0-1-2",
+      },
+    ],
+  },
+];
+export default {
+  name: "standardMap",
+  data() {
+    return {
+      treeSource: [
+        // {
+        //   name: "主数据标准",
+        //   id: "1",
+        //   scopedSlots: { title: "custom" },
+        //   isEdit: false,
+        //   children: [
+        //     {
+        //       name: "主数据标准1",
+        //       id: "1-1",
+        //       level: 1,
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "主数据标准2",
+        //       id: "1-2",
+        //       level: 2,
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "主数据标准3",
+        //       id: "1-3",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "主数据标准4",
+        //       id: "1-4",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //   ],
+        // },
+        // {
+        //   name: "维数据标准",
+        //   id: "2",
+        //   scopedSlots: { title: "custom" },
+        //   isEdit: false,
+        //   level: 1,
+        //   children: [
+        //     {
+        //       name: "维数据标准1",
+        //       id: "2-1",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [
+        //         {
+        //           name: "维数据标准1-1",
+        //           id: "2-1-1",
+        //           scopedSlots: { title: "custom" },
+        //           isEdit: false,
+        //           level: 3,
+        //           children: [],
+        //         },
+        //         {
+        //           name: "维数据标准1-2",
+        //           id: "2-1-2",
+        //           scopedSlots: { title: "custom" },
+        //           isEdit: false,
+        //           level: 3,
+        //           children: [],
+        //         },
+        //         {
+        //           name: "维数据标准1-3",
+        //           id: "2-1-3",
+        //           scopedSlots: { title: "custom" },
+        //           isEdit: false,
+        //           level: 3,
+        //           children: [],
+        //         },
+        //       ],
+        //     },
+        //     {
+        //       name: "维数据标准2",
+        //       id: "2-2",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "维数据标准3",
+        //       id: "2-3",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "维数据标准4",
+        //       id: "2-4",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "维数据标准5",
+        //       id: "2-5",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //   ],
+        // },
+        // {
+        //   name: "公共维标准",
+        //   id: "3",
+        //   scopedSlots: { title: "custom" },
+        //   isEdit: false,
+        //   level: 1,
+        //   children: [
+        //     {
+        //       name: "公共维标准",
+        //       id: "3-1",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "公共维标准",
+        //       id: "3-2",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "公共维标准",
+        //       id: "3-3",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "公共维标准",
+        //       id: "3-4",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //   ],
+        // },
+        // {
+        //   name: "业务数据标准",
+        //   id: "4",
+        //   scopedSlots: { title: "custom" },
+        //   isEdit: false,
+        //   level: 1,
+        //   children: [
+        //     {
+        //       name: "业务数据标准1",
+        //       id: "4-1",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "业务数据标准2",
+        //       id: "4-2",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "业务数据标准3",
+        //       id: "4-3",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "业务数据标准4",
+        //       id: "4-4",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //   ],
+        // },
+        // {
+        //   name: "数据质量",
+        //   id: "5",
+        //   scopedSlots: { title: "custom" },
+        //   isEdit: false,
+        //   level: 1,
+        //   children: [
+        //     {
+        //       name: "数据质量1",
+        //       id: "5-1",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "数据质量2",
+        //       id: "5-2",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "数据质量3",
+        //       id: "5-3",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //     {
+        //       name: "数据质量4",
+        //       id: "5-4",
+        //       scopedSlots: { title: "custom" },
+        //       isEdit: false,
+        //       level: 2,
+        //       children: [],
+        //     },
+        //   ],
+        // },
+      ],
+      backupsExpandedKeys: [],
+      autoExpandParent: false,
+      checkedKeys: [],
+      selectedKeys: [],
+      searchValue: "",
+      searchStr: "",
+      replaceFields: { title: "name", key: "id" },
+      expandedKeys: [],
+      treeLoading: false,
+      tableData: [
+        // {
+        //   name: "test",
+        //   nameCn: "测试",
+        //   result: "40%",
+        //   status: "0",
+        //   create: "2021-09-12 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test1",
+        //   nameCn: "测试1",
+        //   result: "70%",
+        //   status: "1",
+        //   create: "2021-08-12 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test2",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test3",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test4",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test5",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test6",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test7",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test8",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test9",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test10",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test11",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test12",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test13",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test14",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test15",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test16",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test17",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test18",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+        // {
+        //   name: "test19",
+        //   nameCn: "测试2",
+        //   result: "70%",
+        //   status: "0",
+        //   create: "2021-05-18 12:12:12",
+        //   release: "2021-07-19 13:13:13",
+        // },
+      ],
+      columns: [
+        {
+          dataIndex: "index",
+          title: "序号",
+          align: "center",
+          // width: 50,
+          customRender: (text, record, index) => index + 1,
+        },
+        {
+          dataIndex: "nameCn",
+          title: "中文名称",
+          align: "center",
+          // width: "auto",
+        },
+        {
+          dataIndex: "name",
+          title: "英文名称",
+          align: "center",
+          // width: "auto",
+        },
+        {
+          dataIndex: "status",
+          title: "映射状态",
+          customRender: (text) =>
+            text == "0" ? (
+              <a-badge status="error" text="未结束" />
+            ) : (
+              <a-badge status="success" text="映射结束" />
+            ),
+          // width: "auto",
+          align: "center",
+        },
+        {
+          dataIndex: "releaseTime",
+          title: "最近映射时间",
+          align: "center",
+          // width: "auto",
+          sorter: (a, b) =>
+            new Date(a.create).getTime() - new Date(b.create).getTime(),
+        },
+        {
+          dataIndex: "createTime",
+          title: "最新创建时间",
+          align: "center",
+          // width: "auto",
+          sorter: (a, b) =>
+            new Date(a.create).getTime() - new Date(b.create).getTime(),
+        },
+        {
+          title: "操作",
+          key: "action",
+          scopedSlots: { customRender: "action" },
+          align: "center",
+        },
+      ],
+      addVisible: false,
+      modalTitle: "标准映射",
+      treeDataSelect,
+      SHOW_PARENT,
+      formData: {
+        catalogValue: [],
+        selectedStandard: [],
+      },
+      resultVisible: false,
+      resultTitle: "映射结果",
+      tabKey: "1",
+      options: [],
+      ruleValidate: {
+        catalogValue: [{ required: true, message: "必填", trigger: "change" }],
+        selectedStandard: [
+          { required: true, message: "必填", trigger: "change" },
+        ],
+      },
+      btnLoading: false,
+      tableLoading: false,
+      searchConditions: {
+        name: "",
+        page: 0,
+        size: 20,
+      },
+      currentPage: 1,
+      total: 0,
+      searchMatch: {
+        fieldName: "",
+        page: 0,
+        size: 20,
+        standardId: "",
+      },
+      matchCurrentPage: 1,
+      hitCurrentPage: 1,
+      matchTotal: 0,
+      matchTable: [],
+      matchColumn: [
+        {
+          dataIndex: "fieldNameCn",
+          title: "中文名称",
+          align: "center",
+          // width: "auto",
+          customRender: (text) =>
+            text ? text : "无"
+        },
+        {
+          dataIndex: "fieldName",
+          title: "名称",
+          align: "center",
+          // width: "auto",
+        },
+        {
+          dataIndex: "state",
+          title: "绑定情况",
+          align: "center",
+          // width: "auto",
+        },
+        {
+          dataIndex: "type",
+          title: "数据类型",
+          align: "center",
+          // width: "auto",
+        },
+        {
+          dataIndex: "assetType",
+          title: "资产类型",
+          align: "center",
+          // width: "auto",
+        },
+        {
+          dataIndex: "dataSourceType",
+          title: "数据源类型",
+          align: "center",
+          // width: "auto",
+        },
+        {
+          dataIndex: "dataSource",
+          title: "数据源",
+          align: "center",
+          // width: "auto",
+        },
+        {
+          dataIndex: "createdTime",
+          title: "命中时间",
+          align: "center",
+          // width: "auto",
+        },
+        {
+          title: "操作",
+          key: "action",
+          width: 180,
+          scopedSlots: { customRender: "action" },
+          align: "center",
+        },
+      ],
+      searchHit:{
+        fieldName: "",
+        page: 0,
+        size: 20,
+        standardId: "",
+      },
+      hitTotal:0,
+      hitTable:[],
+      matchTableLoading:false,
+      hitTableLoading:false,
+    };
+  },
+  methods: {
+    onSearch() {
+      this.searchValue = this.searchStr;
+      if (this.searchValue === "") {
+        this.expandedKeys = [];
+      } else {
+        this.expandedKeys = [];
+        this.backupsExpandedKeys = [];
+        const candidateKeysList = this.getkeyList(
+          this.searchValue,
+          this.treeSource,
+          []
+        );
+        candidateKeysList.forEach((item) => {
+          const key = this.getParentKey(item, this.treeSource);
+          // eslint-disable-next-line no-shadow
+          if (key && !this.backupsExpandedKeys.some((item) => item === key))
+            this.backupsExpandedKeys.push(key);
+        });
+        const { length } = this.backupsExpandedKeys;
+        // eslint-disable-next-line no-plusplus
+        for (let i = 0; i < length; i++) {
+          this.getAllParentKey(this.backupsExpandedKeys[i], this.treeSource);
+        }
+        this.expandedKeys = this.backupsExpandedKeys.slice();
+      }
+    },
+    // 获取节点中含有value的所有key集合
+    getkeyList(value, tree, keyList) {
+      // eslint-disable-next-line no-plusplus
+      for (let i = 0; i < tree.length; i++) {
+        const node = tree[i];
+        if (node.name.indexOf(value) > -1) {
+          keyList.push(node.id);
+        }
+        if (node.children) {
+          this.getkeyList(value, node.children, keyList);
+        }
+      }
+      return keyList;
+    },
+    // 该递归主要用于获取key的父亲节点的key值
+    getParentKey(id, tree) {
+      let parentKey;
+      let temp;
+      // eslint-disable-next-line no-plusplus
+      for (let i = 0; i < tree.length; i++) {
+        const node = tree[i];
+        if (node.children) {
+          if (node.children.some((item) => item.id === id)) {
+            parentKey = node.id;
+            // eslint-disable-next-line no-cond-assign
+          } else if ((temp = this.getParentKey(id, node.children))) {
+            parentKey = temp;
+          }
+        }
+      }
+      return parentKey;
+    },
+    // 获取该节点的所有祖先节点
+    getAllParentKey(id, tree) {
+      let parentKey;
+      if (id) {
+        parentKey = this.getParentKey(id, tree);
+        if (parentKey) {
+          if (!this.backupsExpandedKeys.some((item) => item === parentKey)) {
+            this.backupsExpandedKeys.push(parentKey);
+          }
+          this.getAllParentKey(parentKey, tree);
+        }
+      }
+    },
+    onExpand(expandedKeys) {
+      this.expandedKeys = expandedKeys;
+      this.autoExpandParent = false;
+    },
+    onCheck(checkedKeys) {
+      this.checkedKeys = checkedKeys;
+    },
+    onSelect(selectedKeys, info) {
+      this.selectedKeys = selectedKeys;
+      console.log(selectedKeys);
+    },
+    addCancel() {
+      this.addVisible = false;
+      this.$refs.formModel.resetFields();
+    },
+    standardMapping() {
+      this.addVisible = true;
+      this.formData.catalogValue = [];
+      this.formData.selectedStandard = [];
+    },
+    standardChange(selectedItems) {
+      this.formData.selectedStandard = selectedItems;
+    },
+    //目录发生变化,需要发起请求 来获取对应目录下的数据标准
+    changeCatalog(value, node, extra) {
+      console.log(value);
+      console.log(this.formData.catalogValue);
+      //发起请求,参数是选中的目录
+      this.getStandardDict();
+    },
+    showResult(record) {
+      this.tabKey="1"
+      this.resultVisible = true;
+      this.searchMatch.standardId = record.standardId;
+      this.searchHit.standardId = record.standardId;
+      this.renderMatchTable();
+      this.renderHitTable();
+    },
+    closeResultModal() {
+      this.resultVisible = false;
+    },
+    getTreeSelect() {
+      this.$http.get(url + "/parent/cascader").then((res) => {
+        console.log(res.data.data);
+        this.treeDataSelect = res.data.data;
+      });
+    },
+    getStandardDict() {
+      this.$http({
+        url: url + "/standardMapping/standardDict",
+        method: "get",
+        params: {
+          catalogIds: this.formData.catalogValue.join(","),
+        },
+      }).then((res) => {
+        this.options = res.data.data;
+        // console.log(res.data.data);
+      });
+    },
+    filterOption(value, option) {
+      return option.componentOptions.children[0].text.indexOf(value) >= 0;
+    },
+    selectValue(value) {
+      console.log(value);
+      console.log(this.options);
+      this.options.forEach((item, index) => {
+        if (item.value == value.key) {
+          this.options.splice(index, 1);
+        }
+      });
+    },
+    //取消选中
+    deselectValue(value) {
+      let obj = { value: value.key, label: value.label };
+      this.options.push(obj);
+    },
+    startMapping() {
+      console.log(this.formData.selectedStandard);
+      this.$refs.formModel.validate((valid) => {
+        if (valid) {
+          this.btnLoading = true;
+          let arr = [];
+          this.formData.selectedStandard.forEach((item) => {
+            arr.push(item.key);
+          });
+          console.log(arr);
+          this.$http({
+            method: "post",
+            url: url + "/standardMapping/startMapping",
+            data: this.$qs.stringify(
+              {
+                standardIds: arr,
+                catalogIds: this.formData.catalogValue,
+              },
+              { arrayFormat: "repeat" }
+            ),
+          }).then((res) => {
+            if (res.data.success) {
+              this.$notification.success({
+                message: "映射成功",
+                duration: 2,
+              });
+              // this.currentPage = 1;
+              this.btnLoading = false;
+              this.renderTable();
+              this.addVisible = false;
+            } else {
+              this.$notification.error({
+                message: "映射失败",
+                duration: 2,
+              });
+              this.btnLoading = false;
+            }
+          });
+        }
+      });
+    },
+    renderTable() {
+      this.tableLoading = true;
+      this.$http({
+        url: url + "/standardMapping/page",
+        method: "get",
+        params: {
+          page: this.searchConditions.page,
+          size: this.searchConditions.size,
+          nameCn: this.searchConditions.name,
+        },
+      }).then((res) => {
+        if (res.data.success) {
+          this.tableData = res.data.data.results;
+          this.total = res.data.data.total;
+        } else {
+          this.$message.error("获取映射结果列表失败", 2);
+        }
+        this.tableLoading = false;
+      });
+    },
+    pageChange(currentPage) {
+      this.currentPage = currentPage;
+      this.searchConditions.page = currentPage - 1;
+      console.log(this.searchConditions.page);
+      this.renderTable();
+    },
+    renderTree() {
+      this.treeLoading = true;
+      this.$http.get("/zuul/lmanage/dataStandard/catalog/tree").then((res) => {
+        if (res.data.success) {
+          this.treeSource = res.data.data;
+        } else {
+          this.$message.error("查询目录失败", 2);
+        }
+        this.treeLoading = false;
+      });
+      // console.log(123);
+    },
+    nameChange() {
+      this.searchConditions.page = 0;
+      this.currentPage = 1;
+      // console.log(value);
+      this.renderTable();
+    },
+    matchNameChange() {
+      this.searchMatch.page = 0;
+      this.matchCurrentPage = 1;
+      // console.log(value);
+      this.renderMatchTable();
+    },
+    matchPageChange(currentPage) {
+      this.matchCurrentPage = currentPage;
+      this.searchMatch.page = currentPage - 1;
+      // console.log(this.searchConditions.page);
+      this.renderMatchTable();
+    },
+    renderMatchTable() {
+      this.matchTableLoading = true;
+      this.$http({
+        method: "get",
+        url: url + "/matchField/page",
+        params: {
+          page: this.searchMatch.page,
+          size: this.searchMatch.size,
+          fieldName: this.searchMatch.fieldName,
+          standardId: this.searchMatch.standardId,
+        },
+      }).then((res) => {
+        if (res.data.success) {
+          this.matchTable = res.data.data.results;
+          this.matchTotal = res.data.data.total;
+        } else {
+          this.$message.error("获取映射结果列表失败", 2);
+        }
+        this.matchTableLoading = false;
+      });
+    },
+    renderHitTable() {
+      this.hitTableLoading = true;
+      this.$http({
+        method: "get",
+        url: url + "/hitField/page",
+        params: {
+          page: this.searchHit.page,
+          size: this.searchHit.size,
+          fieldName: this.searchHit.fieldName,
+          standardId: this.searchHit.standardId,
+        },
+      }).then((res) => {
+        if (res.data.success) {
+          this.hitTable = res.data.data.results;
+          this.hitTotal = res.data.data.total;
+        } else {
+          this.$message.error("获取映射结果列表失败", 2);
+        }
+      this.hitTableLoading = false;
+      });
+    },
+    hitPageChange(currentPage) {
+      this.hitCurrentPage = currentPage;
+      this.searchHit.page = currentPage - 1;
+      // console.log(this.searchConditions.page);
+      this.renderHitTable();
+    },
+    hitNameChange(){
+      this.searchHit.page = 0;
+      this.hitCurrentPage = 1;
+      // console.log(value);
+      this.renderHitTable();
+    },
+  },
+  mounted() {
+    this.getTreeSelect();
+    this.renderTable();
+    this.renderTree();
+    // this.renderMatchTable()
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    },
+  },
+};
+</script>
+
+<style scoped lang="less">
+.standardMap {
+  display: flex;
+  justify-content: flex-start;
+  width: 100%;
+  background-color: #f2f7fa;
+  /deep/ .ant-spin-nested-loading > div > .ant-spin .ant-spin-dot {
+    top: 200px;
+  }
+  .catalog {
+    background-color: #fff;
+    width: 15%;
+    margin-left: 1.429rem;
+    margin-top: 1.429rem;
+    margin-right: 1.429rem;
+    text-align: center;
+    min-width: 20.571rem;
+    height: 95%;
+    box-shadow: 1px 1px 5px #6da2c0;
+    .bar {
+      width: 100%;
+      padding: 1.429rem;
+      // margin: 0 auto;
+      // height: 5.571rem;
+      text-align: left;
+      position: relative;
+      span:first-child {
+        margin-right: 0.714rem;
+        margin-left: 0.714rem;
+        width: 10.714rem;
+      }
+    }
+  }
+  .table {
+    background-color: #fff;
+    margin-top: 1.429rem;
+    width: 82%;
+    height: 95%;
+    box-shadow: 1px 1px 5px #6da2c0;
+  }
+}
+.tree {
+  width: 65%;
+  margin-bottom: 0.714rem;
+  margin-left: 1.429rem;
+  .ant-tree {
+    font-size: 1.071rem;
+    margin-left: 1.429rem;
+    user-select: none;
+    /deep/.ant-tree-node-content-wrapper.ant-tree-node-selected {
+      background-color: #fff;
+      color: red;
+    }
+    /deep/.ant-tree-node-content-wrapper:hover {
+      background-color: #fff;
+      // color: #0aa1ed;
+    }
+  }
+  /deep/.ant-tree.ant-tree-show-line li {
+    text-align: left;
+  }
+}
+/deep/.page {
+  .ant-pagination {
+    margin-bottom: 0px !important;
+  }
+}
+</style>

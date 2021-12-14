@@ -1,0 +1,16 @@
+{
+  "id": "2400248",
+  "name": "les-vue-project",
+  "font_family": "iconfont",
+  "css_prefix_text": "icon-",
+  "description": "",
+  "glyphs": [
+    {
+      "icon_id": "15685215",
+      "name": "主题_调色盘",
+      "font_class": "theme",
+      "unicode": "e6d7",
+      "unicode_decimal": 59095
+    }
+  ]
+}

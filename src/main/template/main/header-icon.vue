@@ -1,0 +1,141 @@
+<template>
+  <div>
+    <a-dropdown>
+      <a class="ant-dropdown-link left" @click="e => e.preventDefault()">
+          <a-avatar style="backgroundColor:#87d068;" icon="user" />
+          {{userInfo.userName}}
+        <a-icon type="down"/>
+      </a>
+      <a-menu slot="overlay" style="margin-top: -10px;">
+        <!--<a-menu-item @click.native="editPassword">-->
+          <!--<a href="javascript:;">-->
+            <!--<a-icon type="lock"/>&nbsp;修改密码</a>-->
+        <!--</a-menu-item>-->
+         <a-menu-item @click.native="sysInfo">
+          <a href="javascript:;">
+            <a-icon type="info-circle"/>&nbsp;系统信息</a>
+        </a-menu-item>
+        <a-menu-item @click.native="exitSys">
+          <a href="javascript:;">
+            <a-icon type="login"/>&nbsp;退出登录</a>
+        </a-menu-item>
+      </a-menu>
+    </a-dropdown>
+    <!--<a-switch   style="margin-left: 8px;" />-->
+    <!--<a-switch @change="changeTheme($event,null)" v-model="theme">-->
+      <!--<p slot="checkedChildren">白天</p>-->
+      <!--<p slot="unCheckedChildren">黑夜</p>-->
+    <!--</a-switch>-->
+    
+  </div>
+</template>
+<script>
+import {DelCookie,DelLocalStorage} from "@/libs/util";
+  export default {
+    name: "header-icon",
+    data(){
+      return{
+        //  skinTheme: this.$store.state.app.skinTheme
+      }
+    },
+    computed: {
+      'skinTheme'(){
+         return this.$store.state.app.theme;
+      },
+      'userInfo'() {
+        return this.$store.state.user;
+      },
+      'themeIndex'(){
+          return this.$store.state.app.themeIndex;
+      },
+      'currentTheme'(){
+        return  this.$store.state.app.currentTheme;
+      }
+    },
+    methods: {
+      loginOut() {
+        this.$http({
+          url: "/zuul/oauth/logout",
+          method: 'post'
+        });
+      },
+      exitSys() {
+        let self = this;
+        this.$confirm({
+          title: '操作提示',
+          content: '确定退出系统?',
+          okType: 'danger',
+          onOk: () => {
+            self.loginOut();
+            this.$store.commit('resetState',()=>{
+              setTimeout(()=>{
+                self.$destroyAll();
+                DelLocalStorage('menuCache');
+                DelCookie('LESITSID');
+                self.$router.push({
+                  path: '/login'
+                });
+              },500);
+            });
+          },
+          onCancel:()=>{
+            self.$destroyAll();
+          }
+        })
+      },
+      sysInfo(){
+         let self = this;
+         const h = this.$createElement;
+         const modal  = this.$info({
+            title: '系统信息',
+            okText:"关闭",
+            content: h('div', {}, [
+              h('p', '版本号: V3'),
+            ]),
+            onOk() {
+              self.$destroyAll();
+            },
+          });
+      },
+      changeTheme(theme,index){
+        if(this.themeIndex != index){
+          this.changeThemeHref(theme.href);
+          this.$store.commit('changeThemeIndex',index);
+        }
+      },
+      changeThemeHref(href){
+       try{
+          if(!href){
+           href = this.skinTheme[this.themeIndex]["href"];
+        }
+        let antLink = document.getElementById('link-antd');
+        antLink.setAttribute("href","./static/css/white-theme.css");
+       }catch(e){
+         }
+      }
+    },
+    mounted(){
+      setTimeout(()=>{
+        this.changeThemeHref();
+      },0);
+    }
+  }
+</script>
+
+<style scoped>
+  .ant-dropdown-link{
+    color: #1890ff;
+  }
+  .ant-dropdown-link img {
+    width: 26px;
+    border-radius: 50%;
+    margin: 0 10px;
+  }
+  .les-theme-icon{
+    font-size: 40px;
+    color: #52c41a;
+  }
+  .les-theme-icon2{
+    font-size: 30px;
+  }
+</style>

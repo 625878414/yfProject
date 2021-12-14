@@ -1,0 +1,1666 @@
+<template>
+  <div class="dataQuality-rules">
+    <div class="bread-header">
+      <a-breadcrumb>
+        <a-breadcrumb-item>
+          <router-link to="/dataManage/dataQuality/index">首页</router-link>
+        </a-breadcrumb-item>
+        <a-breadcrumb-item>
+          <router-link to="/dataManage/dataQuality/projectList">项目列表</router-link>
+        </a-breadcrumb-item>
+        <a-breadcrumb-item>
+          <router-link to="/dataManage/dataQuality/rules">{{ projectName }}</router-link>
+        </a-breadcrumb-item>
+      </a-breadcrumb>
+    </div>
+    <div class="les-table-toolbar">
+      <a-button-group>
+        <a-button type="primary" icon="plus" @click="add"> 新增监控规则 </a-button>
+      </a-button-group>
+      <div>
+        <a-input
+          v-model="searchConditions.tableName"
+          placeholder="输入表名"
+          :maxLength="30"
+          style="width: 150px; margin-right: 5px"
+          allowClear
+          @change="handleSearch"
+        >
+          <a-icon slot="suffix" type="search" />
+        </a-input>
+        <a-range-picker
+          valueFormat="YYYY-MM-DD HH:mm:ss"
+          format="YYYY-MM-DD HH:mm:ss"
+          show-time
+          @change="searchTimeChange"
+        >
+        </a-range-picker>
+      </div>
+    </div>
+    <vue-scroll :style="'height:' + (bodyHeight - 160) + 'px;'">
+      <a-table
+        style="width: 100%"
+        :columns="columns"
+        :data-source="tableData"
+        rowKey="id"
+        :pagination="false"
+        size="small"
+        :loading="loading"
+      >
+        <template slot="action" slot-scope="text, record">
+          <a-button
+            style="margin-right: 5px"
+            type="primary"
+            icon="edit"
+            size="small"
+            @click="edit(record)"
+            >编辑</a-button
+          >
+          <a-button
+            style="margin-right: 5px"
+            type="danger"
+            icon="delete"
+            size="small"
+            @click="del(record)"
+            :loading="record.deloading"
+            >删除</a-button
+          >
+        </template>
+      </a-table>
+    </vue-scroll>
+    <a-pagination
+      :defaultPageSize="20"
+      style="text-align: right; margin: 10px"
+      :showQuickJumper="this.total > 20"
+      :show-total="total => `共 ${total} 条`"
+      :total="total"
+      @change="pageChange"
+      :current="currentPage"
+    >
+    </a-pagination>
+    <a-modal
+      class="les-drawer-form"
+      @cancel="addClose"
+      :maskClosable="true"
+      :title="drawerTitle"
+      :visible="modalVisible"
+      width="50%"
+      :footer="null"
+    >
+      <a-steps :current="current">
+        <a-step v-for="item in steps" :key="item.title" :title="item.title" />
+      </a-steps>
+      <div class="steps-content" v-if="current === 0">
+        <a-form-model
+          ref="baseValid"
+          :labelCol="{ span: 6 }"
+          :wrapperCol="{ span: 12 }"
+          :model="formData"
+          :rules="ruleValidate"
+        >
+          <a-form-model-item label="数据源" prop="sourceId">
+            <a-select
+              @change="sourceChange"
+              v-model="formData.sourceId"
+              placeholder="请选择数据源"
+              allowClear
+            >
+              <a-select-option v-for="item in sourceList" :value="item.id" :key="item.id">
+                {{ item.name }}
+              </a-select-option>
+            </a-select>
+          </a-form-model-item>
+          <a-form-model-item label="表" prop="assetId">
+            <a-select
+              @change="tableChange"
+              v-model="formData.assetId"
+              placeholder="请选择表"
+              allowClear
+            >
+              <a-select-option v-for="item in tableList" :key="item.value" :value="item.value">
+                {{ item.label }}
+              </a-select-option>
+            </a-select>
+          </a-form-model-item>
+          <a-form-model-item label="类型" prop="type">
+            <a-select @change="typeChange" v-model="formData.type" placeholder="请选择类型">
+              <a-select-option value="0">
+                单表校验
+              </a-select-option>
+            </a-select>
+          </a-form-model-item>
+        </a-form-model>
+      </div>
+      <div class="steps-content" style="padding-top:10px" v-else-if="current === 1">
+        <vue-scroll :style="`height:${formData.rules.length === 0 ? '200px' : '430px'}`">
+          <div class="ruleType">
+            <a-dropdown style="margin-right:10px">
+              <a-menu slot="overlay" @click="selectRule">
+                <a-menu-item v-for="(rule, index) in ruleList" :key="index">
+                  {{ rule.label }}
+                </a-menu-item>
+              </a-menu>
+              <a-button type="primary"> 添加规则 <a-icon type="down" /> </a-button>
+            </a-dropdown>
+          </div>
+          <a-form-model ref="ruleValid" :model="formData" layout="horizontal" :rules="ruleValidate">
+            <div class="rule-form" v-for="(rule, index) in formData.rules" :key="index">
+              <div class="rule-title">
+                <span>{{
+                  rule.type == 0
+                    ? "完整性校验"
+                    : rule.type == 1
+                    ? "准确性校验"
+                    : rule.type == 2
+                    ? "规范性校验"
+                    : rule.type == 3
+                    ? "唯一性校验"
+                    : "自定义SQL"
+                }}</span>
+                <span>
+                  <a-popconfirm title="确定删除此条规则吗" @confirm="delRule(index)">
+                    <a-button type="link" size="small">删除</a-button>
+                  </a-popconfirm>
+                </span>
+              </div>
+              <a-row :gutter="20">
+                <a-col :span="7">
+                  <a-form-model-item
+                    label="字段"
+                    :label-col="{ span: 8 }"
+                    :wrapper-col="{ span: 8 }"
+                    :prop="`rules.${index}.columnName`"
+                    :rules="ruleValidate.columnName"
+                  >
+                    <a-select style="width:160px" v-model="rule.columnName" placeholder="请选择">
+                      <a-select-option
+                        v-for="item in columnList"
+                        :value="item.label"
+                        :key="item.value"
+                      >
+                        {{ item.label }}
+                      </a-select-option>
+                    </a-select>
+                  </a-form-model-item>
+                </a-col>
+                <a-col :span="8" v-if="rule.type != 4">
+                  <a-form-model-item
+                    label="统计函数:"
+                    :label-col="{ span: 8 }"
+                    :wrapper-col="{ span: 8 }"
+                    :prop="`rules.${index}.functionId`"
+                    :rules="ruleValidate.functionId"
+                  >
+                    <a-select style="width:160px" v-model="rule.functionId" placeholder="请选择">
+                      <a-select-option
+                        v-for="(item, index) in funcList"
+                        :key="index"
+                        :value="item.id"
+                      >
+                        {{ item.functionName }}
+                      </a-select-option>
+                    </a-select>
+                  </a-form-model-item>
+                </a-col>
+              </a-row>
+              <!-- <a-row :gutter="6">
+                <a-col :span="24">
+                  <a-form-model-item
+                    style="margin-left:8px"
+                    label="过滤条件"
+                    :label-col="{ span: 2 }"
+                    :wrapper-col="{ span: 18 }"
+                  >
+                    <a-input
+                      type="textarea"
+                      v-model="rule.filter"
+                      placeholder="请输入"
+                      allowClear
+                      :maxLength="255"
+                    ></a-input>
+                  </a-form-model-item>
+                </a-col>
+              </a-row> -->
+              <a-row>
+                <a-col :span="8">
+                  <a-form-model-item
+                    label="校验方法"
+                    :label-col="{ span: 7 }"
+                    :prop="`rules.${index}.verifyType`"
+                    :rules="ruleValidate.verifyType"
+                    style="margin-left:-6px"
+                  >
+                    <a-select style="width:160px" v-model="rule.verifyType" placeholder="请选择">
+                      <a-select-option
+                        v-for="(item, index) in checkMethod"
+                        :value="item.value"
+                        :key="index"
+                      >
+                        {{ item.label }}
+                      </a-select-option>
+                    </a-select>
+                  </a-form-model-item>
+                </a-col>
+              </a-row>
+              <a-row>
+                <a-col :span="8">
+                  <a-form-model-item
+                    style="margin-left:-8px"
+                    label="取值范围"
+                    :label-col="{ span: 7 }"
+                    :prop="`rules.${index}.valueRange.postOperator`"
+                    :rules="ruleValidate.postOperator"
+                  >
+                    <a-select
+                      style="width: 140px"
+                      placeholder="请选择运算符"
+                      v-model="rule.valueRange.postOperator"
+                    >
+                      <a-select-option value="="> = </a-select-option>
+                      <a-select-option value="<"> &lt; </a-select-option>
+                      <a-select-option value=">"> &gt; </a-select-option>
+                    </a-select>
+                  </a-form-model-item>
+                </a-col>
+                <a-col :span="2">
+                  <a-form-model-item
+                    :prop="`rules.${index}.valueRange.postValue`"
+                    :rules="ruleValidate.postValue"
+                  >
+                    <a-input
+                      placeholder="输入数值"
+                      style="width: 80px;margin-left:-55px "
+                      v-model="rule.valueRange.postValue"
+                      :maxLength="10"
+                    ></a-input>
+                  </a-form-model-item>
+                </a-col>
+
+                <a-col :span="1">
+                  <span @click="statusChangeAdd(rule, index)" class="status">{{
+                    rule.valueRange.relationType == "0"
+                      ? "关"
+                      : rule.valueRange.relationType == "1"
+                      ? "或"
+                      : "且"
+                  }}</span>
+                </a-col>
+                <a-col :span="4">
+                  <a-form-model-item
+                    :label-col="{ span: 6 }"
+                    :wrapper-col="{ span: 8 }"
+                    :prop="`rules.${index}.valueRange.preOperator`"
+                    :rules="rule.valueRange.relationType === '0' ? [] : ruleValidate.preOperator"
+                  >
+                    <a-select
+                      style="width: 140px;margin-left:-40px"
+                      v-model="rule.valueRange.preOperator"
+                      placeholder="请选择运算符"
+                      :disabled="rule.valueRange.relationType === '0'"
+                    >
+                      <a-select-option value="="> = </a-select-option>
+                      <a-select-option value="<"> &lt; </a-select-option>
+                      <a-select-option value=">"> &gt; </a-select-option>
+                    </a-select>
+                  </a-form-model-item>
+                </a-col>
+                <a-col :span="4">
+                  <a-form-model-item
+                    :prop="`rules.${index}.valueRange.preValue`"
+                    :rules="rule.valueRange.relationType === '0' ? [] : ruleValidate.preValue"
+                  >
+                    <a-input
+                      placeholder="输入数值"
+                      style="width: 80px; margin-left: -30px"
+                      v-model="rule.valueRange.preValue"
+                      :disabled="rule.valueRange.relationType === '0'"
+                      :maxLength="10"
+                    ></a-input>
+                  </a-form-model-item>
+                </a-col>
+              </a-row>
+              <a-row>
+                <a-col :span="24">
+                  <a-form-model-item
+                    style="margin-left:4px"
+                    label="强弱规则"
+                    :label-col="{ span: 2 }"
+                    :wrapper-col="{ span: 5 }"
+                  >
+                    <a-select v-model="rule.ruleStrength" placeholder="请选择">
+                      <a-select-option value="0">
+                        弱规则
+                      </a-select-option>
+                    </a-select>
+                  </a-form-model-item>
+                </a-col>
+              </a-row>
+              <a-row v-if="rule.type == 4">
+                <a-col :span="24">
+                  <a-form-model-item
+                    label="自定义sql"
+                    :label-col="{ span: 2 }"
+                    :wrapper-col="{ span: 5 }"
+                    style="margin-left:4px"
+                  >
+                    <editor
+                      v-model="rule.customizeSql"
+                      @init="editorInit"
+                      theme="chrome"
+                      width="450"
+                      height="100"
+                      lang="sql"
+                    >
+                    </editor>
+                  </a-form-model-item>
+                </a-col>
+              </a-row>
+            </div>
+          </a-form-model>
+        </vue-scroll>
+      </div>
+      <div class="steps-content" v-else>
+        <a-form-model
+          layout="horizontal"
+          :label-col="{ span: 8 }"
+          :wrapper-col="{ span: 10 }"
+          :model="formData.scheduleConf"
+          :rules="ruleValidate"
+          ref="dispatch"
+        >
+          <a-form-model-item label="调度周期" prop="periodType">
+            <a-select
+              placeholder="请选择调度周期"
+              v-model="formData.scheduleConf.periodType"
+              @change="periodTypeChange"
+            >
+              <a-select-option value="0">分</a-select-option>
+              <a-select-option value="1">时</a-select-option>
+            </a-select>
+          </a-form-model-item>
+          <a-form-model-item label="间隔时间" placeholder="请输入间隔" prop="timeInterval">
+            <a-input
+              v-model="formData.scheduleConf.timeInterval"
+              placeholder="请输入间隔时间"
+              :maxLength="5"
+            ></a-input>
+          </a-form-model-item>
+          <a-form-model-item label="调度时间" prop="effectiveDate">
+            <a-range-picker
+              v-model="formData.scheduleConf.effectiveDate"
+              valueFormat="YYYY-MM-DD HH:mm:ss"
+              format="YYYY-MM-DD HH:mm:ss"
+              @change="timeChange"
+              show-time
+            />
+          </a-form-model-item>
+          <a-form-model-item label="CRON表达式">
+            <a-input
+              type="textarea"
+              v-model="formData.scheduleConf.cron_expression"
+              :disabled="true"
+              :maxLength="10"
+            ></a-input>
+          </a-form-model-item>
+          <a-form-model-item label="样本量上限" prop="sampleUpperLimit">
+            <a-input-number
+              v-model="formData.scheduleConf.sampleUpperLimit"
+              :max="9999"
+              :min="0"
+            ></a-input-number>
+            <span style="margin:0px 10px">条</span>
+          </a-form-model-item>
+        </a-form-model>
+      </div>
+      <div class="steps-action">
+        <a-button v-if="current < steps.length - 1" type="primary" @click="next">
+          下一步
+        </a-button>
+        <a-button
+          v-if="current == steps.length - 1"
+          :loading="btnLoading"
+          type="primary"
+          @click="saveMonitor"
+        >
+          保存
+        </a-button>
+        <a-button v-if="current > 0" style="margin-left: 8px" @click="prev">
+          上一步
+        </a-button>
+      </div>
+    </a-modal>
+    <a-drawer
+      :visible="editVisible"
+      :maskClosable="false"
+      width="60%"
+      title="修改规则配置"
+      @close="drawerClose"
+    >
+      <div v-if="editVisible" class="edit">
+        <a-tabs v-model="tabKey">
+          <a-tab-pane key="1" tab="规则管理">
+            <vue-scroll :style="'height:' + (bodyHeight - 180) + 'px;'">
+              <div class="tab-header">
+                <a-button type="primary" style="margin-right:5px" @click="editDispatch"
+                  >编辑调度属性</a-button
+                >
+              </div>
+              <a-descriptions style="margin:20px 0px" bordered size="small" :column="2">
+                <a-descriptions-item label="执行周期">
+                  {{ descriptions.scheduleConf.periodType === "0" ? "分" : "时" }}
+                </a-descriptions-item>
+                <a-descriptions-item label="创建时间">
+                  {{ descriptions.createdTime }}
+                </a-descriptions-item>
+                <a-descriptions-item label="开始时间">
+                  {{ descriptions.scheduleConf.beginTime }}
+                </a-descriptions-item>
+
+                <a-descriptions-item label="结束时间">
+                  {{ descriptions.scheduleConf.endTime }}
+                </a-descriptions-item>
+                <a-descriptions-item label="类型">
+                  {{ descriptions.scheduleConf.periodType === "0" ? "单表校验" : "多表对比" }}
+                </a-descriptions-item>
+                <a-descriptions-item label="间隔时间">
+                  {{ descriptions.scheduleConf.timeInterval }}
+                </a-descriptions-item>
+              </a-descriptions>
+              <div class="ruleType">
+                <a-dropdown style="margin-right:10px">
+                  <a-menu slot="overlay" @click="selectRule">
+                    <a-menu-item v-for="(rule, index) in ruleList" :key="index">
+                      {{ rule.label }}
+                    </a-menu-item>
+                  </a-menu>
+                  <a-button type="primary"> 添加规则 <a-icon type="down" /> </a-button>
+                </a-dropdown>
+              </div>
+              <div
+                :class="rule.isDeleted === '0' ? 'rule-form' : ''"
+                v-for="(rule, index) in formData.rules"
+                :key="index"
+              >
+                <a-form-model
+                  ref="ruleValid"
+                  :model="formData"
+                  layout="horizontal"
+                  :rules="ruleValidate"
+                  v-show="rule.isDeleted === '0'"
+                >
+                  <div class="rule-title">
+                    <span>{{
+                      rule.type == 0
+                        ? "完整性校验"
+                        : rule.type == 1
+                        ? "准确性校验"
+                        : rule.type == 2
+                        ? "规范性校验"
+                        : rule.type == 3
+                        ? "唯一性校验"
+                        : "自定义SQL"
+                    }}</span>
+                    <span>
+                      <a-button
+                        type="link"
+                        size="small"
+                        @click="saveRule(rule, index)"
+                        v-if="!rule.notEdit"
+                        :loading="rule.loading"
+                        >保存</a-button
+                      >
+                      <a-button type="link" size="small" @click="editRule(rule)" v-else
+                        >编辑</a-button
+                      >
+                      <a-popconfirm title="确定删除此条规则吗" @confirm="delEditRule(rule, index)">
+                        <a-button type="link" size="small" :loading="rule.delLoading"
+                          >删除</a-button
+                        >
+                      </a-popconfirm>
+                    </span>
+                  </div>
+                  <a-row :gutter="20">
+                    <a-col :span="8">
+                      <a-form-model-item
+                        label="字段"
+                        :label-col="{ span: 6 }"
+                        :wrapper-col="{ span: 8 }"
+                        :prop="`rules.${index}.columnName`"
+                        :rules="ruleValidate.columnName"
+                        style="margin-left:-5px"
+                      >
+                        <a-select
+                          style="width:160px"
+                          v-model="rule.columnName"
+                          placeholder="请选择"
+                          allowClear
+                          :disabled="rule.notEdit"
+                        >
+                          <a-select-option
+                            v-for="item in columnList"
+                            :value="item.label"
+                            :key="item.value"
+                          >
+                            {{ item.label }}
+                          </a-select-option>
+                        </a-select>
+                      </a-form-model-item>
+                    </a-col>
+                    <a-col :span="6" v-if="rule.type != 4">
+                      <a-form-model-item
+                        label="统计函数:"
+                        :label-col="{ span: 8 }"
+                        :wrapper-col="{ span: 8 }"
+                        :prop="`rules.${index}.functionId`"
+                        :rules="ruleValidate.functionId"
+                      >
+                        <a-select
+                          style="width:160px"
+                          v-model="rule.functionId"
+                          placeholder="请选择"
+                          allowClear
+                          :disabled="rule.notEdit"
+                        >
+                          <a-select-option v-for="item in funcList" :key="item.id" :value="item.id">
+                            {{ item.functionName }}
+                          </a-select-option>
+                        </a-select>
+                      </a-form-model-item>
+                    </a-col>
+                  </a-row>
+                  <!-- <a-row :gutter="6">
+                    <a-col :span="22">
+                      <a-form-model-item
+                        label="过滤条件"
+                        :label-col="{ span: 2 }"
+                        :wrapper-col="{ span: 18 }"
+                      >
+                        <a-input
+                          type="textarea"
+                          v-model="rule.filter"
+                          placeholder="请输入"
+                          allowClear
+                          :disabled="rule.notEdit"
+                          :maxLength="255"
+                        ></a-input>
+                      </a-form-model-item>
+                    </a-col>
+                  </a-row> -->
+                  <a-row :gutter="20">
+                    <a-col :span="7">
+                      <a-form-model-item
+                        label="校验方法"
+                        :label-col="{ span: 7 }"
+                        :wrapper-col="{ span: 8 }"
+                        :prop="`rules.${index}.verifyType`"
+                        :rules="ruleValidate.verifyType"
+                        style="margin-left:-5px"
+                      >
+                        <a-select
+                          style="width:160px"
+                          v-model="rule.verifyType"
+                          placeholder="请选择"
+                          :disabled="rule.notEdit"
+                        >
+                          <a-select-option
+                            v-for="(item, index) in checkMethod"
+                            :value="item.value"
+                            :key="index"
+                          >
+                            {{ item.label }}
+                          </a-select-option>
+                        </a-select>
+                      </a-form-model-item>
+                    </a-col>
+                  </a-row>
+                  <a-row>
+                    <a-col :span="6">
+                      <a-form-model-item
+                        style="margin-left:-8px"
+                        label="取值范围"
+                        :label-col="{ span: 8 }"
+                        :prop="`rules.${index}.valueRange.postOperator`"
+                        :rules="ruleValidate.postOperator"
+                      >
+                        <a-select
+                          style="width: 140px"
+                          placeholder="请选择运算符"
+                          v-model="rule.valueRange.postOperator"
+                          :disabled="rule.notEdit"
+                        >
+                          <a-select-option value="="> = </a-select-option>
+                          <a-select-option value="<"> &lt; </a-select-option>
+                          <a-select-option value=">"> &gt; </a-select-option>
+                        </a-select>
+                      </a-form-model-item>
+                    </a-col>
+                    <a-col :span="2">
+                      <a-form-model-item
+                        :prop="`rules.${index}.valueRange.postValue`"
+                        :rules="ruleValidate.postValue"
+                      >
+                        <a-input
+                          placeholder="输入数值"
+                          style="width: 80px;margin-left:-36px "
+                          v-model="rule.valueRange.postValue"
+                          :disabled="rule.notEdit"
+                          :maxLength="5"
+                        ></a-input>
+                      </a-form-model-item>
+                    </a-col>
+
+                    <a-col :span="1">
+                      <a-button
+                        :disabled="rule.notEdit"
+                        @click="statusChange(rule, index)"
+                        class="status btnStatus"
+                        >{{
+                          rule.valueRange.relationType == "0"
+                            ? "关"
+                            : rule.valueRange.relationType == "1"
+                            ? "或"
+                            : "且"
+                        }}</a-button
+                      >
+                    </a-col>
+                    <a-col :span="4">
+                      <a-form-model-item
+                        :label-col="{ span: 6 }"
+                        :wrapper-col="{ span: 8 }"
+                        :prop="`rules.${index}.valueRange.preOperator`"
+                        :rules="
+                          rule.valueRange.relationType === '0' ? [] : ruleValidate.preOperator
+                        "
+                      >
+                        <a-select
+                          style="width: 140px;margin-left:-50px"
+                          v-model="rule.valueRange.preOperator"
+                          placeholder="请选择运算符"
+                          :disabled="rule.notEdit || rule.valueRange.relationType === '0'"
+                        >
+                          <a-select-option value="="> = </a-select-option>
+                          <a-select-option value="<"> &lt; </a-select-option>
+                          <a-select-option value=">"> &gt; </a-select-option>
+                        </a-select>
+                      </a-form-model-item>
+                    </a-col>
+                    <a-col :span="4">
+                      <a-form-model-item
+                        :prop="`rules.${index}.valueRange.preValue`"
+                        :rules="rule.valueRange.relationType === '0' ? [] : ruleValidate.preValue"
+                      >
+                        <a-input
+                          placeholder="输入数值"
+                          style="width: 80px; margin-left: -78px"
+                          v-model="rule.valueRange.preValue"
+                          :disabled="rule.notEdit || rule.valueRange.relationType === '0'"
+                          :maxLength="5"
+                        ></a-input>
+                      </a-form-model-item>
+                    </a-col>
+                  </a-row>
+                  <a-row>
+                    <a-col :span="24">
+                      <a-form-model-item
+                        label="强弱规则"
+                        :label-col="{ span: 2 }"
+                        :wrapper-col="{ span: 5 }"
+                        style="margin-left:-7px"
+                      >
+                        <a-select v-model="rule.ruleStrength" :disabled="rule.notEdit">
+                          <a-select-option value="0">
+                            弱规则
+                          </a-select-option>
+                        </a-select>
+                      </a-form-model-item>
+                    </a-col>
+                  </a-row>
+                  <a-row v-if="rule.type == 4">
+                    <a-col :span="24">
+                      <a-form-model-item
+                        label="自定义sql"
+                        :label-col="{ span: 2 }"
+                        :wrapper-col="{ span: 5 }"
+                        style="margin-left:-8px"
+                      >
+                        <editor
+                          v-model="rule.customizeSql"
+                          @init="editorInit"
+                          theme="chrome"
+                          width="450"
+                          height="100"
+                          lang="sql"
+                          :disabled="rule.notEdit"
+                        >
+                        </editor>
+                      </a-form-model-item>
+                    </a-col>
+                  </a-row>
+                </a-form-model>
+              </div>
+            </vue-scroll>
+            <div class="drawer">
+              <a-divider style="background:#000"></a-divider>
+              <a-button type="danger" style="margin-right:10px" @click="drawerClose">关闭</a-button>
+              <a-button type="primary" @click="saveDrawer" :loading="editSaveLoading"
+                >保存</a-button
+              >
+            </div>
+          </a-tab-pane>
+          <!-- <a-tab-pane key="2" tab="远程触发">
+            待添加
+          </a-tab-pane> -->
+        </a-tabs>
+      </div>
+    </a-drawer>
+    <a-modal
+      class="les-drawer-form"
+      @cancel="editModalClose"
+      :maskClosable="true"
+      title="调度属性"
+      :visible="editModalVisible"
+      width="50%"
+    >
+      <template slot="footer">
+        <a-button @click="editModalClose" type="danger"> 返回 </a-button>
+        <a-button type="primary" @click="saveScheduleConf" :loading="saveScheduleLoading">
+          保存
+        </a-button>
+      </template>
+      <a-form-model
+        layout="horizontal"
+        :label-col="{ span: 8 }"
+        :wrapper-col="{ span: 10 }"
+        :model="formData.scheduleConf"
+        :rules="ruleValidate"
+        ref="dispatch"
+      >
+        <a-form-model-item label="调度周期" prop="periodType">
+          <a-select
+            placeholder="请选择调度周期"
+            v-model="formData.scheduleConf.periodType"
+            @change="periodTypeChange"
+          >
+            <a-select-option value="0">分</a-select-option>
+            <a-select-option value="1">时</a-select-option>
+          </a-select>
+        </a-form-model-item>
+        <a-form-model-item label="间隔时间" prop="timeInterval">
+          <a-input
+            v-model="formData.scheduleConf.timeInterval"
+            placeholder="请输入间隔时间"
+            :maxLength="5"
+          ></a-input>
+        </a-form-model-item>
+        <a-form-model-item label="调度时间" prop="effectiveDate">
+          <a-range-picker
+            v-model="formData.scheduleConf.effectiveDate"
+            valueFormat="YYYY-MM-DD HH:mm:ss"
+            format="YYYY-MM-DD HH:mm:ss"
+            @change="timeChange"
+            show-time
+          />
+        </a-form-model-item>
+        <a-form-model-item label="CRON表达式">
+          <a-input
+            type="textarea"
+            v-model="formData.scheduleConf.cron_expression"
+            :disabled="true"
+            :maxLength="255"
+          ></a-input>
+        </a-form-model-item>
+        <a-form-model-item label="样本量上限" prop="sampleUpperLimit">
+          <a-input-number
+            v-model="formData.scheduleConf.sampleUpperLimit"
+            :max="9999"
+            :min="0"
+          ></a-input-number>
+          <span style="margin:0px 10px">条</span>
+        </a-form-model-item>
+      </a-form-model>
+    </a-modal>
+  </div>
+</template>
+
+<script>
+import { isInteger } from "../../../libs/validate";
+import { GetPageByDelete } from "../../../libs/util";
+const ruleList = [
+  { value: "0", label: "完整性校验" },
+  { value: "1", label: "准确性校验" },
+  { value: "2", label: "规范性校验" },
+  { value: "3", label: "唯一性校验" }
+  // { value: "4", label: "自定义sql" }
+];
+const checkMethod = [
+  { value: "0", label: "固定值" },
+  { value: "1", label: "1天波动检测" },
+  { value: "2", label: "7天波动检测" },
+  { value: "3", label: "月度波动检测" },
+  { value: "4", label: "7天平均值波动检测" },
+  { value: "5", label: "月度平均值波动检测" }
+];
+function debounce(fn, wait) {
+  let timeout = null;
+  wait = wait || 600;
+  return function() {
+    let that = this;
+    if (timeout !== null) clearTimeout(timeout);
+    timeout = setTimeout(() => {
+      fn.apply(that);
+    }, wait);
+  };
+}
+function checkMinute(rule, value, callback) {
+  if (value > 0 && value <= 60) {
+    callback();
+  } else {
+    callback(new Error("间隔分钟为1-60"));
+  }
+}
+function checkHour(rule, value, callback) {
+  if (value > 0 && value <= 24) {
+    callback();
+  } else {
+    callback(new Error("间隔小时为1-24"));
+  }
+}
+export default {
+  name: "dataQuality-rules",
+  data() {
+    return {
+      searchConditions: {
+        tableName: "",
+        page: 0,
+        size: 20,
+        projectId: undefined,
+        startTime: "",
+        endTime: ""
+      },
+      currentPage: 1,
+      total: 0,
+      tableData: [],
+      loading: false,
+      columns: [
+        {
+          dataIndex: "tdataEntity.name",
+          title: "表",
+          align: "center"
+        },
+        {
+          dataIndex: "type",
+          title: "类型",
+          align: "center",
+          customRender: text => (text === "0" ? "单表校验" : "多表对比")
+        },
+        {
+          dataIndex: "tdataEntity.dataWarehouseSource",
+          title: "数据源",
+          align: "center",
+          customRender: text => {
+            return text.typeName + "/" + text.name;
+          }
+        },
+        {
+          dataIndex: "projectConf.alias",
+          title: "所属项目",
+          align: "center"
+        },
+        {
+          dataIndex: "scheduleConf.periodType",
+          title: "周期",
+          align: "center",
+          customRender: text => (text == "0" ? "分" : "时")
+        },
+        {
+          dataIndex: "scheduleConf.timeInterval",
+          title: "间隔时间",
+          align: "center"
+        },
+        {
+          dataIndex: "scheduleConf.beginTime",
+          title: "开始时间",
+          align: "center"
+        },
+        {
+          dataIndex: "scheduleConf.endTime",
+          title: "结束时间",
+          align: "center"
+        },
+        {
+          title: "操作",
+          scopedSlots: { customRender: "action" },
+          align: "center"
+        }
+      ],
+      modalVisible: false,
+      btnLoading: false,
+      drawerTitle: "新增规则",
+      steps: [
+        {
+          title: "监控对象"
+        },
+        {
+          title: "监控规则"
+        },
+        {
+          title: "调度属性"
+        }
+      ],
+      current: 0,
+      formData: {
+        sourceId: undefined,
+        projectId: "",
+        type: "0",
+        assetId: undefined,
+        rules: [],
+        scheduleConf: {
+          periodType: undefined,
+          beginTime: "",
+          endTime: "",
+          timeInterval: "",
+          cron_expression: "",
+          sampleUpperLimit: "",
+          effectiveDate: [],
+          descriptions: {}
+        }
+      },
+      ruleList,
+      ruleValidate: {
+        sourceId: [{ required: true, message: "必填", trigger: "change" }],
+        assetId: [{ required: true, message: "必填", trigger: "change" }],
+        type: [{ required: true, message: "必填", trigger: "change" }],
+        columnName: [{ required: true, message: "必填", trigger: "change" }],
+        verifyType: [{ required: true, message: "必填", trigger: "change" }],
+        sampleUpperLimit: [{ required: true, message: "必填", trigger: "change" }],
+        effectiveDate: [{ required: true, message: "必填", trigger: "change" }],
+        postOperator: [{ required: true, message: "必填", trigger: "change" }],
+        postValue: [{ validator: isInteger, trigger: "change" }],
+        preValue: [{ validator: isInteger, trigger: "change" }],
+        preOperator: [{ required: true, message: "必填", trigger: "change" }],
+        functionId: [{ required: true, message: "必填", trigger: "change" }],
+        periodType: [{ required: true, message: "必填", trigger: "change" }],
+        timeInterval: [
+          { validator: isInteger, trigger: "change" },
+          { required: true, message: "必填", trigger: "change" }
+        ]
+      },
+      editVisible: false,
+      tabKey: "1",
+      taskData: [
+        {
+          tenant: "数栈测试",
+          product: "离线任务",
+          project: "对外测试项目二组",
+          task: "dataV_xxx",
+          responsible: "耗子",
+          id: "123"
+        }
+      ],
+      taskColumns: [
+        {
+          dataIndex: "tenant",
+          title: "租户"
+        },
+        {
+          dataIndex: "product",
+          title: "产品"
+        },
+        {
+          dataIndex: "project",
+          title: "项目"
+        },
+        {
+          dataIndex: "task",
+          title: "任务"
+        },
+        {
+          dataIndex: "responsible",
+          title: "责任人"
+        }
+      ],
+      editModalVisible: false,
+      projectList: [],
+      sourceList: [],
+      tableList: [],
+      columnList: [],
+      funcList: [],
+      checkMethod,
+      saveScheduleLoading: false,
+      projectName: "",
+      editSaveLoading: false
+    };
+  },
+  methods: {
+    add() {
+      this.modalVisible = true;
+      this.current = 0;
+      this.formInit();
+      this.formData.projectId = localStorage.getItem("projectId");
+      console.log("表单的项目id", this.formData.projectId);
+      this.typeChange(this.formData.type);
+    },
+    pageChange(currentPage) {
+      this.currentPage = currentPage;
+      this.searchConditions.page = currentPage - 1;
+      console.log(this.searchConditions.page);
+      this.renderTable();
+    },
+    renderTable() {
+      let { page, size, tableName, startTime, endTime } = this.searchConditions;
+      this.loading = true;
+      this.$http({
+        method: "get",
+        url: "/zuul/lmanage/dataQuality/monitor/page",
+        params: {
+          page,
+          size,
+          tableName,
+          endTime,
+          startTime,
+          projectId: localStorage.getItem("projectId")
+        }
+      }).then(res => {
+        if (res.data.success) {
+          console.log(res.data);
+          this.tableData = res.data.data.results;
+          this.total = res.data.data.total;
+        }
+        this.loading = false;
+      });
+    },
+    addClose() {
+      this.modalVisible = false;
+      try {
+        this.$refs.baseValid.resetFields();
+        this.$refs.ruleValid.resetFields();
+      } catch (error) {}
+    },
+    //点击下一步 需要对当前的表单进行校验
+    next() {
+      // this.current++;
+      if (this.current === 0) {
+        this.$refs.baseValid.validate(valid => {
+          if (valid) {
+            this.current++;
+          }
+        });
+      } else if (this.current === 1) {
+        if (this.formData.rules.length === 0) {
+          this.$message.error("请至少添加一项规则", 2);
+        } else {
+          this.$nextTick(() => {
+            this.$refs.ruleValid.validate(valid => {
+              if (valid) {
+                this.current++;
+              }
+            });
+          });
+        }
+      }
+      // if (this.current === 0) {
+      //   this.current++;
+      // } else if (this.current === 1) {
+      //   if (this.formData.rules.length === 0) {
+      //     this.$message.error("请至少添加一条规则", 2);
+      //   } else {
+      //     this.$nextTick(() => {
+      //       this.$refs.ruleValid.validate(valid => {
+      //         if (valid) {
+      //           this.current++;
+      //           // console.log(this.current);
+      //         } else {
+      //           console.log(this.$refs.ruleValid);
+      //         }
+      //       });
+      //     });
+      //   }
+      // }
+    },
+    prev() {
+      this.current--;
+    },
+    //选择规则类型,push进formData.rule中 循环生成表单在页面上
+    selectRule(e) {
+      // console.log(e);
+      this.formData.rules.push({
+        columnName: undefined,
+        type: e.key + "",
+        filter: "",
+        verifyType: undefined,
+        functionId: undefined,
+        valueRange: {
+          postOperator: undefined,
+          postValue: "",
+          preValue: "",
+          relationType: "0",
+          preOperator: undefined
+        },
+        ruleStrength: "0",
+        isCustomizeSql: e.key != 4 ? "0" : "1",
+        id: "",
+        monitorId: this.formData.id,
+        isDeleted: "0"
+      });
+      console.log(this.formData);
+    },
+    //删除新增时的增加的规则 (无需调用接口)
+    delRule(index) {
+      this.formData.rules.splice(index, 1);
+    },
+    //保存规则
+    saveMonitor() {
+      this.$refs.dispatch.validate(valid => {
+        if (valid) {
+          // this.formData.rules = JSON.stringify(this.formData.rules);
+          // this.formData.scheduleConf = JSON.stringify(this.formData.scheduleConf);
+          this.btnLoading = true;
+          this.formData.rules.forEach(item => {
+            if (item.valueRange.preOperator === undefined) {
+              item.valueRange.preOperator = "";
+            }
+            item.valueRange = JSON.stringify(item.valueRange);
+          });
+          this.$http({
+            method: "post",
+            url: "/zuul/lmanage/dataQuality/monitor/save",
+            data: JSON.stringify(this.formData),
+            headers: {
+              "Content-Type": "application/json"
+            }
+          }).then(res => {
+            if (res.data.success) {
+              this.$notification.success({
+                message: "操作成功",
+                duration: 2
+              });
+              // this.currentPage = 1;
+              this.btnLoading = false;
+              this.modalVisible = false;
+              this.renderTable();
+            } else {
+              this.$notification.error({
+                message: "操作失败",
+                duration: 2
+              });
+              // this.formData.rules = JSON.parse(this.formData.rules);
+              // this.formData.scheduleConf = JSON.parse(this.formData.scheduleConf);
+              this.formData.rules.forEach(item => {
+                item.valueRange = JSON.parse(item.valueRange);
+              });
+              this.btnLoading = false;
+            }
+          });
+        }
+      });
+    },
+    timeChange(date) {
+      this.formData.scheduleConf.beginTime = date[0];
+      this.formData.scheduleConf.endTime = date[1];
+    },
+    drawerClose() {
+      // this.formData.rules.forEach(item => {
+      //   item.valueRange = JSON.stringify(item.valueRange);
+      // });
+      this.renderTable();
+      this.editVisible = false;
+    },
+    edit(record) {
+      console.log(record);
+      //获取表下的字段
+      this.tableChange(record.tdataEntity.id);
+      //根据单表还是多表 类型 获取统计函数
+      this.typeChange(record.type);
+      this.formData = { ...record };
+      this.descriptions = { ...record };
+      this.formData.rules = [...record.rules];
+      this.formData.scheduleConf = { ...record.scheduleConf };
+      console.log(this.formData);
+      this.formData.rules.forEach(item => {
+        item.valueRange = JSON.parse(item.valueRange);
+        this.$set(item, "notEdit", true);
+      });
+      this.formData.scheduleConf.effectiveDate = [
+        this.formData.scheduleConf.beginTime,
+        this.formData.scheduleConf.endTime
+      ];
+      this.editVisible = true;
+      this.tabKey = "1";
+    },
+    //重置表单
+    formInit() {
+      this.formData = {
+        sourceId: undefined,
+        type: "0",
+        assetId: undefined,
+        rules: [],
+        scheduleConf: {
+          periodType: undefined,
+          beginTime: "",
+          endTime: "",
+          timeInterval: "",
+          cron_expression: "",
+          sampleUpperLimit: "",
+          effectiveDate: []
+        }
+      };
+    },
+    //关闭编辑抽屉
+    editModalClose() {
+      this.editModalVisible = false;
+      this.$refs.dispatch.resetFields();
+    },
+    //点击修改抽屉中的编辑调度按钮
+    editDispatch() {
+      this.ruleValidate.timeInterval[2] =
+        this.formData.scheduleConf.periodType === "0"
+          ? { validator: checkMinute, trigger: "change" }
+          : this.formData.scheduleConf.periodType === "1"
+          ? { validator: checkHour, trigger: "change" }
+          : {};
+      this.formData.scheduleConf = { ...this.descriptions.scheduleConf };
+      this.$set(this.formData.scheduleConf, "effectiveDate", []);
+      this.formData.scheduleConf.effectiveDate = [
+        this.descriptions.scheduleConf.beginTime,
+        this.descriptions.scheduleConf.endTime
+      ];
+      this.editModalVisible = true;
+    },
+    searchTimeChange(date) {
+      this.searchConditions.startTime = date[0];
+      this.searchConditions.endTime = date[1];
+      console.log("开始时间", this.searchConditions.startTime);
+      console.log("结束时间", this.searchConditions.endTime);
+      this.renderTable();
+    },
+    //获取数据源
+    getSource() {
+      this.$http.get("/zuul/lmanage/dataWarehouse/dict").then(res => {
+        this.sourceList = res.data.data;
+        console.log(this.sourceList);
+      });
+    },
+    //根据数据源id获取数据源下的表
+    sourceChange(value) {
+      if (value) {
+        this.$http({
+          url: "/zuul/lmanage/dataEntity/dict",
+          params: {
+            desWarehouseId: value
+          },
+          method: "get"
+        }).then(res => {
+          this.tableList = res.data.data;
+          console.log(this.tableList);
+        });
+      } else {
+        this.tableList = [];
+        console.log(this.tableList);
+      }
+    },
+    //根据表获取列字段
+    tableChange(value) {
+      if (value) {
+        this.$http({
+          url: "/zuul/lmanage/dataEntity/column/dict",
+          params: {
+            assetId: value
+          },
+          method: "get"
+        }).then(res => {
+          this.columnList = res.data.data;
+          console.log(this.columnList);
+        });
+      } else {
+        this.columnList = [];
+        console.log(this.columnList);
+      }
+    },
+    //根据单表或多表来获取不同的统计函数
+    typeChange(value) {
+      if (value) {
+        this.$http({
+          url: "/zuul/lmanage/dataQuality/rule/udf",
+          params: {
+            type: value
+          },
+          method: "get"
+        }).then(res => {
+          this.funcList = res.data.data;
+          console.log(this.funcList);
+        });
+      } else {
+        this.funcList = [];
+        console.log(this.funcList);
+      }
+    },
+    //初始化编辑器
+    editorInit() {
+      require("brace/ext/language_tools"); //language extension prerequsite...
+      require("brace/mode/html");
+      require("brace/mode/javascript"); //language
+      require("brace/mode/java"); //language
+      require("brace/mode/less");
+      require("brace/mode/sql");
+      require("brace/theme/chrome");
+      require("brace/snippets/javascript"); //snippet
+    },
+    //搜索防抖
+    handleSearch: debounce(function() {
+      this.formData.projectId = this.searchConditions.projectId;
+      this.$route.query.id = this.searchConditions.projectId;
+      this.renderTable();
+    }, 500),
+    //保存单条规则
+    saveRule(rule, index) {
+      // console.log(rule);
+      this.$refs.ruleValid[index].validate(valid => {
+        if (valid) {
+          console.log(rule);
+          this.$set(rule, "loading", true);
+          // rule.valueRange=JSON.stringify(rule.valueRange)
+          if (rule.valueRange.preOperator === undefined) {
+            rule.valueRange.preOperator = "";
+          }
+          this.$http({
+            method: "post",
+            data: {
+              id: rule.id,
+              monitorId: rule.monitorId,
+              type: rule.type,
+              columnName: rule.columnName,
+              filter: rule.filter,
+              verifyType: rule.verifyType,
+              functionId: rule.functionId,
+              isCustomizeSql: rule.isCustomizeSql,
+              customizeSql: rule.customizeSql,
+              valueRange: JSON.stringify(rule.valueRange),
+              ruleStrength: rule.ruleStrength,
+              isDeleted: rule.isDeleted
+            },
+            url: "/zuul/lmanage/dataQuality/rule/save"
+          }).then(res => {
+            if (res.data.success) {
+              console.log(res);
+              rule.id = res.data.data;
+              this.$notification.success({
+                message: "操作成功",
+                duration: 2
+              });
+              this.$set(rule, "notEdit", true);
+            } else {
+              this.$notification.error({
+                message: "操作失败",
+                duration: 2
+              });
+              // this.formData.rules = JSON.parse(this.formData.rules);
+              // this.formData.scheduleConf = JSON.parse(this.formData.scheduleConf);
+              // rule.valueRange=JSON.parse(rule.valueRange)
+            }
+            this.$set(rule, "loading", false);
+          });
+        }
+      });
+    },
+    //编辑单条规则按钮 关闭不是编辑状态
+    editRule(rule) {
+      this.$set(rule, "notEdit", false);
+    },
+    saveDrawer() {
+      console.log(this.formData.id);
+      this.editSaveLoading = true;
+      this.$http({
+        method: "post",
+        url: "/zuul/lmanage/dataQuality/monitor/resubmit",
+        data: {
+          id: this.formData.id
+        }
+      }).then(res => {
+        if (res.data.success) {
+          this.$notification.success({
+            message: "操作成功",
+            duration: 2
+          });
+          this.editVisible = false;
+          this.renderTable();
+        } else {
+          this.$notification.error({
+            message: "操作失败",
+            duration: 2
+          });
+        }
+        this.editSaveLoading = false;
+      });
+      this.renderTable();
+    },
+    //保存修改时的调度信息
+    saveScheduleConf() {
+      this.$refs.dispatch.validate(valid => {
+        if (valid) {
+          this.saveScheduleLoading = true;
+          this.$http({
+            method: "post",
+            url: "/zuul/lmanage/dataQuality/schedule/save",
+            data: this.formData.scheduleConf
+          }).then(res => {
+            console.log(res);
+            if (res.data.success) {
+              this.$notification.success({
+                message: "操作成功",
+                duration: 2
+              });
+              this.saveScheduleLoading = false;
+              // this.descriptions = this.formData.scheduleConf;
+              this.editModalVisible = false;
+              console.log(this.descriptions);
+              console.log(this.formData.scheduleConf);
+              this.descriptions.scheduleConf.beginTime = this.formData.scheduleConf.beginTime;
+              this.descriptions.scheduleConf.endTime = this.formData.scheduleConf.endTime;
+              this.descriptions.scheduleConf.timeInterval = this.formData.scheduleConf.timeInterval;
+              this.descriptions.scheduleConf.periodType = this.formData.scheduleConf.periodType;
+            } else {
+              this.$notification.error({
+                message: "操作失败",
+                duration: 2
+              });
+            }
+          });
+        }
+      });
+    },
+    //删除单条规则
+    delEditRule(rule, index) {
+      if (rule.id !== "") {
+        this.$set(rule, "delLoading", true);
+        this.$http.delete("/zuul/lmanage/dataQuality/rule/delete/" + rule.id).then(res => {
+          console.log(res);
+          if (res.data.success) {
+            console.log(res);
+            this.$notification.success({
+              message: "操作成功",
+              duration: 2
+            });
+            rule.isDeleted = "1";
+            this.formData.rules.splice(index, 1);
+          } else {
+            this.$notification.error({
+              message: "操作失败",
+              duration: 2
+            });
+            // this.formData.rules = JSON.parse(this.formData.rules);
+            // this.formData.scheduleConf = JSON.parse(this.formData.scheduleConf);
+            // rule.valueRange=JSON.parse(rule.valueRange)
+          }
+          this.$set(rule, "delLoading", true);
+        });
+      } else {
+        this.formData.rules.splice(index, 1);
+      }
+    },
+    statusChangeAdd(rule, index) {
+      rule.valueRange.relationType =
+        rule.valueRange.relationType == "0" ? "1" : rule.valueRange.relationType == "1" ? "2" : "0";
+      if (rule.valueRange.relationType === "0") {
+        this.$refs.ruleValid.clearValidate([
+          `rules.${index}.valueRange.preOperator`,
+          `rules.${index}.valueRange.preValue`
+        ]);
+        rule.valueRange.preValue = "";
+        rule.valueRange.preOperator = undefined;
+      }
+    },
+    //关且或的状态切换  当处于关的状态时 清除后面的两个必填的校验信息
+    statusChange(rule, index) {
+      rule.valueRange.relationType =
+        rule.valueRange.relationType == "0" ? "1" : rule.valueRange.relationType == "1" ? "2" : "0";
+      if (rule.valueRange.relationType === "0") {
+        this.$refs.ruleValid[index].clearValidate([
+          `rules.${index}.valueRange.preOperator`,
+          `rules.${index}.valueRange.preValue`
+        ]);
+        rule.valueRange.preValue = "";
+        rule.valueRange.preOperator = undefined;
+      }
+    },
+    //删除规则
+    del(record) {
+      this.$confirm({
+        title: "信息提示",
+        content: "删除规则会同步清除校验任务!",
+        okType: "danger",
+        onOk: () => {
+          this.$set(record, "deloading", true);
+          this.$http.delete("/zuul/lmanage/dataQuality/monitor/delete/" + record.id).then(res => {
+            if (res.data.success) {
+              this.$notification.success({
+                message: "删除成功",
+                duration: 2
+              });
+              this.searchConditions.page = GetPageByDelete(
+                this.searchConditions.page,
+                this.tableData.length,
+                1
+              );
+              this.renderTable();
+              this.$set(record, "deloading", false);
+            } else {
+              this.$notification.error({
+                message: "删除失败",
+                duration: 2
+              });
+              this.$set(record, "deloading", false);
+            }
+          });
+        }
+      });
+    },
+    periodTypeChange(value) {
+      this.formData.scheduleConf.timeInterval=""
+      this.$refs.dispatch.clearValidate("timeInterval")
+      if(value==="0"){
+        this.ruleValidate.timeInterval[2]={ validator: checkMinute, trigger: "change" }
+      }else if(value==='1'){
+        this.ruleValidate.timeInterval[2]={ validator: checkHour, trigger: "change" }
+      }
+    }
+  },
+  created() {},
+  mounted() {
+    //获取项目名称
+    this.projectName = localStorage.getItem("projectName");
+    this.renderTable();
+    this.getSource();
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    }
+  },
+  components: {
+    editor: require("vue2-ace-editor")
+  }
+};
+</script>
+
+<style scoped lang="less">
+.steps-content {
+  margin-top: 16px;
+  border: 1px dashed #e9e9e9;
+  border-radius: 6px;
+  background-color: #fafafa;
+  min-height: 200px;
+  padding: 40px 10px;
+}
+.steps-action {
+  margin-top: 24px;
+  display: flex;
+  justify-content: flex-end;
+}
+.ruleType {
+  display: flex;
+  justify-content: flex-end;
+}
+.rule-form {
+  padding: 20px;
+  border: 1px solid #e8e8e8;
+  margin-top: 10px;
+  .rule-title {
+    color: #0aa1ed;
+    font-size: 1.25rem;
+    font-weight: bolder;
+    display: flex;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .ant-form-item {
+    margin-bottom: 10px;
+  }
+}
+.tab-header {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 20px;
+}
+.edit {
+  /deep/.ant-descriptions-row > th {
+    padding-bottom: 8px !important;
+    width: 20% !important;
+  }
+}
+.status {
+  display: inline-block;
+  /* width: 10px;
+  height: 10px; */
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background-color: #e8e8e8;
+  line-height: 30px;
+  text-align: center;
+  cursor: pointer;
+  margin-left: -40px;
+  // margin-right: 5px;
+  margin-top: 5px;
+  user-select: none;
+}
+.btnStatus {
+  padding: 0px 0px;
+}
+.drawer {
+  // position: fixed;
+  // bottom: 20px;
+  // height: 60px;
+  margin-top: 30px;
+  // line-height: 60px;
+  z-index: 1;
+  // margin-left: 140px;
+  // width: 50%;
+  text-align: right;
+}
+/deep/.bread-header {
+  padding: 10px;
+  .ant-breadcrumb {
+    font-size: 1.25rem;
+  }
+}
+</style>

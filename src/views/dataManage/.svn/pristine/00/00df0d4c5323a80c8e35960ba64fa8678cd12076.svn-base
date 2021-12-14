@@ -1,0 +1,320 @@
+<template>
+  <div class="dataQuality-projectList">
+    <div class="les-table-toolbar">
+      <a-button-group>
+        <a-button type="primary" icon="plus" @click="add"> 新增 </a-button>
+      </a-button-group>
+      <div>
+        <a-input
+          v-model="searchConditions.name"
+          placeholder="项目名称"
+          :maxLength="10"
+          style="width: 150px; margin-right: 5px"
+          allowClear
+          @change="handleSearch"
+        >
+          <a-icon slot="suffix" type="search" />
+        </a-input>
+      </div>
+    </div>
+    <vue-scroll :style="'height:' + (bodyHeight - 110) + 'px;'">
+      <a-table
+        style="width: 100%"
+        :columns="columns"
+        :data-source="tableData"
+        rowKey="id"
+        :pagination="false"
+        size="small"
+        :loading="loading"
+      >
+        <span slot="customTitle">
+          显示名称&nbsp;&nbsp;
+          <a-tooltip>
+            <template slot="title">
+              单机进入规则配置
+            </template>
+            <a-icon type="info-circle"> </a-icon>
+          </a-tooltip>
+        </span>
+        <template slot="alias" slot-scope="text, record">
+          <a-button type="link" @click="toRules(record)">{{ text }}</a-button>
+        </template>
+        <template slot="action" slot-scope="text, record">
+          <a-button
+            style="margin-right: 5px"
+            type="primary"
+            icon="eye"
+            size="small"
+            @click="toTask(record)"
+            >查看任务</a-button
+          >
+          <a-button
+            style="margin-right: 5px"
+            type="danger"
+            icon="delete"
+            size="small"
+            @click="del(record)"
+            :loading="record.deloading"
+            >删除</a-button
+          >
+        </template>
+      </a-table>
+    </vue-scroll>
+    <a-pagination
+      :defaultPageSize="20"
+      style="text-align: right; margin: 10px"
+      :showQuickJumper="this.total > 20"
+      :show-total="total => `共 ${total} 条`"
+      :total="total"
+      @change="pageChange"
+      :current="currentPage"
+    >
+    </a-pagination>
+    <a-modal v-model="addVisible" title="新增项目" :maskClosable="false">
+      <template slot="footer">
+        <a-button @click="addCancel"> 返回 </a-button>
+        <a-button type="primary" @click="save" :loading="btnLoading">
+          确定
+        </a-button>
+      </template>
+      <a-form-model
+        layout="horizontal"
+        :label-col="{ span: 6 }"
+        :wrapper-col="{ span: 14 }"
+        :model="formData"
+        :rules="ruleValidate"
+        ref="formModel"
+      >
+        <a-form-model-item label="名称" prop="name">
+          <a-input v-model="formData.name"> </a-input>
+        </a-form-model-item>
+        <a-form-model-item label="显示名称" prop="alias">
+          <a-input v-model="formData.alias"> </a-input>
+        </a-form-model-item>
+        <a-form-model-item label="常用排序">
+          <a-input-number v-model="formData.sort" style="width:100%"> </a-input-number>
+        </a-form-model-item>
+        <a-form-model-item label="项目描述">
+          <a-input v-model="formData.description" type="textarea"> </a-input>
+        </a-form-model-item>
+      </a-form-model>
+    </a-modal>
+  </div>
+</template>
+
+<script>
+import { GetPageByDelete } from "../../../libs/util";
+//封装防抖函数
+function debounce(fn, wait) {
+  let timeout = null;
+  wait = wait || 600;
+  return function() {
+    let that = this;
+    if (timeout !== null) clearTimeout(timeout);
+    timeout = setTimeout(() => {
+      fn.apply(that);
+    }, wait);
+  };
+}
+export default {
+  name: "dataQuality-projectList",
+  data() {
+    return {
+      searchConditions: {
+        name: "",
+        alias: "",
+        page: 0,
+        size: 20
+      },
+      formData: {
+        name: "",
+        alias: "",
+        description: "",
+        sort: 0
+      },
+      currentPage: 1,
+      total: 0,
+      tableData: [],
+      loading: false,
+      columns: [
+        {
+          dataIndex: "alias",
+          align: "center",
+          slots: { title: "customTitle" },
+          scopedSlots: { customRender: "alias" },
+          width: 180
+        },
+        {
+          dataIndex: "name",
+          title: "名称",
+          align: "center"
+        },
+        {
+          dataIndex: "description",
+          title: "描述",
+          align: "center"
+        },
+        {
+          dataIndex: "createdTime",
+          title: "创建时间",
+          align: "center"
+        },
+        {
+          title: "操作",
+          scopedSlots: { customRender: "action" },
+          align: "center",
+          width:220
+        }
+      ],
+      ruleValidate: {
+        name: [{ required: true, message: "必填", trigger: "change" }],
+        alias: [{ required: true, message: "必填", trigger: "change" }]
+      },
+      addVisible: false,
+      btnLoading: false
+    };
+  },
+  methods: {
+    add() {
+      this.formData = {
+        name: "",
+        alias: "",
+        description: "",
+        sort: 0
+      };
+      this.addVisible = true;
+    },
+    edit(record) {},
+    pageChange(currentPage) {
+      this.currentPage = currentPage;
+      this.searchConditions.page = currentPage - 1;
+      console.log(this.searchConditions.page);
+      this.renderTable();
+    },
+    renderTable() {
+      let { page, size, name, alias } = this.searchConditions;
+      this.loading = true;
+      this.$http({
+        method: "get",
+        params: {
+          page,
+          size,
+          name,
+          alias
+        },
+        url: "/zuul/lmanage/dataQuality/project/page"
+      }).then(res => {
+        if (res.data.success) {
+          console.log(res.data);
+          this.tableData = res.data.data.results;
+          this.total = res.data.data.total;
+        }
+        this.loading = false;
+      });
+    },
+    addCancel() {
+      this.formData = {
+        name: "",
+        alias: "",
+        description: ""
+      };
+      this.addVisible = false;
+      this.$refs.formModel.resetFields();
+    },
+    save() {
+      this.$refs.formModel.validate(valid => {
+        if (valid) {
+          this.$http({
+            method: "post",
+            url: "/zuul/lmanage/dataQuality/project/save",
+            data: this.formData
+          }).then(res => {
+            if (res.data.success) {
+              this.$notification.success({
+                message: "操作成功",
+                duration: 2
+              });
+              // this.currentPage = 1;
+              this.btnLoading = false;
+              this.addVisible = false;
+              this.renderTable();
+            } else {
+              this.$notification.error({
+                message: "操作失败",
+                duration: 2
+              });
+              this.btnLoading = false;
+            }
+          });
+        }
+      });
+    },
+    //搜索框防抖
+    handleSearch: debounce(function() {
+      this.renderTable();
+    }, 500),
+
+    del(record) {
+      this.$confirm({
+        title: "信息提示",
+        content: "确认删除?",
+        okType: "danger",
+        onOk: () => {
+          this.$set(record, "deloading", true);
+          this.$http.delete("/zuul/lmanage/dataQuality/project/delete/" + record.id).then(res => {
+            if (res.data.success) {
+              this.$notification.success({
+                message: "删除成功",
+                duration: 2
+              });
+              this.searchConditions.page = GetPageByDelete(
+                this.searchConditions.page,
+                this.tableData.length,
+                1
+              );
+              this.renderTable();
+              this.$set(record, "deloading", false);
+            } else {
+              this.$notification.error({
+                message: "删除失败",
+                duration: 2
+              });
+              this.$set(record, "deloading", false);
+            }
+          });
+        }
+      });
+    },
+    toRules(record) {
+      this.$router.push({
+        path: "/dataManage/dataQuality/rules",
+        query: {
+          id: record.id
+        }
+      });
+      localStorage.setItem("projectId",record.id);
+      localStorage.setItem("projectName",record.alias);
+    },
+    toTask(record){
+      this.$router.push({
+        path: "/dataManage/dataQuality/task",
+        query: {
+          id: record.id
+        }
+      });
+      localStorage.setItem("projectId",record.id);
+      localStorage.setItem("projectName",record.alias);
+    }
+  },
+  mounted() {
+    this.renderTable();
+  },
+  computed: {
+    bodyHeight() {
+      return this.$store.state.app.bodyHeight;
+    }
+  }
+};
+</script>
+
+<style scoped lang="less"></style>

@@ -1,0 +1,265 @@
+<template>
+    <!--开放数据-->
+    <div class="openDataWrapper">
+        <a-layout style="padding: 10px 0; background: #f0f5ff">
+            <a-layout-sider width="200">
+                <a-menu
+                    mode="inline"
+                    :default-selected-keys="['1']"
+                    :default-open-keys="['sub1']"
+                    style="height: 100%"
+                >
+                    <a-sub-menu key="sub1">
+                        <span slot="title"><a-icon type="user"/>数据目录</span>
+                        <a-menu-item key="1">
+                            公交交通工具
+                        </a-menu-item>
+                        <a-menu-item key="2">
+                            公交参与者
+                        </a-menu-item>
+                        <a-menu-item key="3">
+                            公交监管
+                        </a-menu-item>
+                        <a-menu-item key="4">
+                            公交经营
+                        </a-menu-item>
+                        <a-menu-item key="5">
+                            公交设施
+                        </a-menu-item>
+                        <a-menu-item key="6">
+                            公交证照
+                        </a-menu-item>
+                        <a-menu-item key="7">
+                            公交运输网络
+                        </a-menu-item>
+                    </a-sub-menu>
+                </a-menu>
+            </a-layout-sider>
+            <a-layout-content :style="{ padding: '0 10px', minHeight: '280px' }">
+                <a-list :grid="{ gutter: 16, column: 1 }" :data-source="data" :pagination="pagination">
+                    <a-list-item slot="renderItem" slot-scope="item, index">
+                        <a-card :bordered="false">
+                            <div class="title">
+                                {{ item.title }}
+                            </div>
+                            <div class="typeTag">
+                                <a-icon type="tag" theme="filled" style="color:#ffc069"/>
+                                {{ item.dataType }}
+                            </div>
+                            <div style="display: flex;margin-top: 10px">
+                                <span>{{ item.typeName }}</span>
+                                <span style="margin-left: 40px">更新：</span>
+                                <span style="color:#8c8c8c">{{ item.updateTime }}</span>
+                            </div>
+                            <div class="content" style="margin-top: 5px">
+                                {{ item.content }}
+                            </div>
+                            <div class="buttonWrapper">
+                                <a-button type="primary" style="float: right" @click="order">接口订购</a-button>
+                            </div>
+                        </a-card>
+                    </a-list-item>
+                </a-list>
+            </a-layout-content>
+        </a-layout>
+        <a-modal v-model="visible" title="接口订购" :width="600">
+            <template slot="footer">
+                <div style="width: 100%;text-align: center">
+                    <a-button type="primary" @click="nextStep">
+                        下一步
+                    </a-button>
+                </div>
+            </template>
+            <div v-if="this.curStep === 1" class="content_modal1" style="padding-left: 33%">
+                <a-checkbox-group v-model="groupValue">
+                    <a-row>
+                        <a-col :span="24">
+                            <a-checkbox value="A">
+                                公交人员信息
+                            </a-checkbox>
+                        </a-col>
+                        <a-col :span="24">
+                            <a-checkbox value="B">
+                                维修组织管理表
+                            </a-checkbox>
+                        </a-col>
+                        <a-col :span="24">
+                            <a-checkbox value="C">
+                                维修组织人员信息表
+                            </a-checkbox>
+                        </a-col>
+                    </a-row>
+                </a-checkbox-group>
+                <div class="buttonBar" style="display: flex;margin-top: 60px">
+                    <a-button-group>
+                        <a-button @click="selectAll">
+                            全部选择
+                        </a-button>
+                        <a-button @click="cancelAll" style="margin-left: 10px">
+                            全部取消
+                        </a-button>
+                    </a-button-group>
+                </div>
+            </div>
+            <div v-if="this.curStep === 2" class="content_modal2">
+                <a-form-model :model="form" v-bind="layout">
+                    <a-form-model-item label="申请单位/团体名称">
+                        <a-input v-model="form.fieldA" placeholder=""/>
+                    </a-form-model-item>
+                    <a-form-model-item label="申请说明">
+                        <a-input v-model="form.fieldB" placeholder=""/>
+                    </a-form-model-item>
+                    <a-form-model-item label="申请联系人">
+                        <a-input v-model="form.fieldC" placeholder=""/>
+                    </a-form-model-item>
+                    <a-form-model-item label="联系电话">
+                        <a-input v-model="form.fieldD" placeholder=""/>
+                    </a-form-model-item>
+                    <a-form-model-item label="使用系统">
+                        <a-input v-model="form.fieldE" placeholder=""/>
+                    </a-form-model-item>
+                </a-form-model>
+            </div>
+        </a-modal>
+    </div>
+</template>
+
+<script>
+export default {
+    name: "openPlatform",
+    data() {
+        return {
+            data: [
+                {
+                    title: '公交人员信息',
+                    typeName: '基础数据',
+                    dataType: '结构化数据',
+                    updateTime: '2021-08-18 19:52:19',
+                    content: '公交人员信息'
+                },
+                {
+                    title: '组织基本信息',
+                    typeName: '基础数据',
+                    dataType: '结构化数据',
+                    updateTime: '2021-08-18 19:52:19',
+                    content: '组织基本信息'
+                },
+                {
+                    title: '维修组织管理表',
+                    typeName: '基础数据',
+                    dataType: '结构化数据',
+                    updateTime: '2021-08-18 19:52:19',
+                    content: '维修组织管理表'
+                },
+                {
+                    title: '驾驶员信息',
+                    typeName: '基础数据',
+                    dataType: '结构化数据',
+                    updateTime: '2021-08-18 19:52:19',
+                    content: '驾驶员信息'
+                },
+                {
+                    title: '公交人员信息2',
+                    typeName: '基础数据',
+                    dataType: '结构化数据',
+                    updateTime: '2021-08-18 19:52:19',
+                    content: '公交人员信息'
+                },
+                {
+                    title: '组织基本信息2',
+                    typeName: '基础数据',
+                    dataType: '结构化数据',
+                    updateTime: '2021-08-18 19:52:19',
+                    content: '组织基本信息'
+                },
+                {
+                    title: '维修组织管理表2',
+                    typeName: '基础数据',
+                    dataType: '结构化数据',
+                    updateTime: '2021-08-18 19:52:19',
+                    content: '维修组织管理表'
+                },
+                {
+                    title: '驾驶员信息2',
+                    typeName: '基础数据',
+                    dataType: '结构化数据',
+                    updateTime: '2021-08-18 19:52:19',
+                    content: '驾驶员信息'
+                }
+            ],
+            pagination: {
+                onChange: page => {
+                    console.log(page);
+                },
+                pageSize: 5,
+            },
+            visible: false,
+            groupValue: [],
+            curStep: 0,
+            maxStep: 2,
+            form: {
+                fieldA: '',
+                fieldB: '',
+                fieldC: '',
+                fieldD: '',
+                fieldE: '',
+            },
+            layout: {
+                labelCol: {span: 8},
+                wrapperCol: {span: 14},
+            },
+        };
+    },
+    methods: {
+        order() {
+            this.visible = true;
+            this.curStep = 1;
+        },
+        nextStep() {
+            this.curStep += 1;
+            if (this.curStep > this.maxStep) {
+                this.visible = false;
+                this.curStep = 0;
+            }
+        },
+        selectAll() {
+            this.groupValue = ["A", "B", "C"]
+        },
+        cancelAll() {
+            this.groupValue = []
+        }
+    }
+}
+</script>
+
+<style scoped lang="less">
+.openDataWrapper {
+    /* padding: 30px;*/
+    background: white;
+
+    .ant-card {
+        line-height: 1.2;
+
+        .ant-card-body {
+            padding: 20px;
+
+            .title {
+                font-size: 20px;
+            }
+
+            .typeTag {
+                position: absolute;
+                top: 18px;
+                right: 28px;
+            }
+        }
+    }
+}
+
+.content_modal1 .ant-checkbox-wrapper {
+    font-size: 18px;
+    line-height: 32px;
+}
+
+
+</style>
