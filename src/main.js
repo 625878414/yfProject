@@ -16,6 +16,10 @@ import moment from 'moment';
 import VueI18n from 'vue-i18n';
 import animated from 'animate.css';
 import VueParticles from 'vue-particles'  
+import * as echarts from 'echarts';
+import VueClipboard from 'vue-clipboard2'
+Vue.use(VueClipboard)
+Vue.prototype.echarts=echarts
 Vue.use(VueParticles);
 moment.locale('zh-cn');
 Vue.use(shiro);
